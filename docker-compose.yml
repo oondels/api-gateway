@@ -1,0 +1,16 @@
+version: "3.8"
+
+services:
+  gateway:
+    build: .
+    container_name: gateway-app
+    ports:
+      - "2307:2307"
+    env_file:
+      - .env
+    environment:
+      - DEV_ENV=development
+    volumes:
+      - .:/app
+      - /app/node_modules
+    restart: unless-stopped
