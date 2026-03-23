@@ -10,7 +10,10 @@ services:
       - .env
     environment:
       - DEV_ENV=development
-    volumes:
-      - .:/app
-      - /app/node_modules
     restart: unless-stopped
+    networks:
+      - dass_private
+
+networks:
+  dass_private:
+    external: true
