@@ -5,7 +5,7 @@ services:
     build: .
     container_name: gateway-app
     ports:
-      - "2307:2307"
+      - "2399:2399"
     env_file:
       - .env
     environment:

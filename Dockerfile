@@ -13,5 +13,5 @@ RUN npm install --only=production
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/.env ./
 
-EXPOSE 2307
+EXPOSE 2399
 CMD ["node", "dist/index.js"]
