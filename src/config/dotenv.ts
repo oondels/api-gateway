@@ -9,4 +9,5 @@ export const vars = {
 
   GATEWAY_PORT: process.env.GATEWAY_PORT,
   MAIN_SERVICE: process.env.MAIN_SERVICE,
+  TELAS_SERVICE: process.env.TELAS_SERVICE,
 };
