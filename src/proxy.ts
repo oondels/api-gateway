@@ -10,6 +10,14 @@ export const setupProxy = (app: any, server: any) => {
     })
   )
 
+  app.use("/api/sobracorte",
+    createProxyMiddleware({
+      target: vars.SOBRACORTE_SERVICE,
+      changeOrigin: true,
+      pathRewrite: { "^/api/sobracorte": "" },
+    })
+  )
+
   app.use(
     "/api/",
     createProxyMiddleware({
