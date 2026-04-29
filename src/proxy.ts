@@ -114,6 +114,14 @@ export const setupProxy = (app: any, server: any) => {
     })
   )
 
+  app.use("/api/solicitacao-brinde",
+    createProxyMiddleware({
+      target: vars.SOLICITACAO_BRINDE_SERVICE,
+      changeOrigin: true,
+      pathRewrite: { "^/api/solicitacao-brinde": "" },
+    })
+  )
+
   app.use(
     "/api/",
     createProxyMiddleware({
