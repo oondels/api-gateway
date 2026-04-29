@@ -122,6 +122,14 @@ export const setupProxy = (app: any, server: any) => {
     })
   )
 
+  app.use("/api/checklist-maquina",
+    createProxyMiddleware({
+      target: vars.CHECKLIST_MAQUINA_SERVICE,
+      changeOrigin: true,
+      pathRewrite: { "^/api/checklist-maquina": "" },
+    })
+  )
+
   app.use(
     "/api/",
     createProxyMiddleware({
