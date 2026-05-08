@@ -7,6 +7,7 @@ export const vars = {
   JWT_SECRET: process.env.JWT_SECRET,
   DEV_ENV: process.env.DEV_ENV,
 
+  DASS_USERS: process.env.DASS_USERS,
   GATEWAY_PORT: process.env.GATEWAY_PORT,
   MAIN_SERVICE: process.env.MAIN_SERVICE,
   TELAS_SERVICE: process.env.TELAS_SERVICE,
@@ -24,5 +25,5 @@ export const vars = {
   REFEITORIO_SERVICE: process.env.REFEITORIO_SERVICE,
   LEAN_SERVICE: process.env.LEAN_SERVICE,
   ATT_OTA_SERVICE: process.env.ATT_OTA_SERVICE,
-CHECKLIST_MAQUINA_SERVICE: process.env.CHECKLIST_MAQUINA_SERVICE,
+  CHECKLIST_MAQUINA_SERVICE: process.env.CHECKLIST_MAQUINA_SERVICE,
 };
