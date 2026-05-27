@@ -11,7 +11,7 @@ const server = http.createServer(app);
 
 app.use(cors({
   origin: ["http://localhost:5174", "http://192.168.26.90", "http://localhost", "http://localhost:5173", "http://10.100.1.43:5050",
-    "http://10.100.1.43:3046", "http://10.100.1.43:9137", "http://10.100.1.43/replicacao-sest/telas-itb", "http://10.100.1.43", "http://localhost:3000", "http://10.110.21.53", "http://10.110.21.53:3000"], credentials: true
+    "http://10.100.1.43:3046", "http://10.100.1.43:9137", "http://10.100.1.43/replicacao-sest/telas-itb", "http://10.100.1.43", "http://localhost:3000", "http://10.110.21.53", "http://10.110.21.53:3000", "http://10.110.20.178:5173"], credentials: true
 }));
 
 app.use(helmet());
