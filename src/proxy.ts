@@ -130,6 +130,14 @@ export const setupProxy = (app: any, server: any) => {
     })
   )
 
+  app.use("/api/almoxarifado-ti",
+    createProxyMiddleware({
+      target: vars.ALMOXARIFADO_TI,
+      changeOrigin: true,
+      pathRewrite: { "^/api/almoxarifado-ti": "" },
+    })
+  )
+
   // TODO: Verificar possibilidade de migrar essa api para MAIN_SERVICE
   app.use("/api/dass-users",
     createProxyMiddleware({
