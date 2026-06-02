@@ -147,6 +147,14 @@ export const setupProxy = (app: any, server: any) => {
     })
   )
 
+  app.use("/api/synapse-ti",
+    createProxyMiddleware({
+      target: vars.SYNAPSE_TI,
+      changeOrigin: true,
+      pathRewrite: { "^/api/synapse-ti": "" },
+    })
+  )
+
   app.use(
     "/api",
     createProxyMiddleware({
