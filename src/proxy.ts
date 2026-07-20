@@ -155,6 +155,7 @@ export const setupProxy = (app: any, server: any) => {
     })
   )
 
+  // Esse tem que ser o último
   app.use(
     "/api",
     createProxyMiddleware({
