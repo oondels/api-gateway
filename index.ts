@@ -1,29 +1,43 @@
-import express, { Request, Response, NextFunction } from "express";
-import http from "http";
-import cors from "cors";
-import helmet from "helmet";
-import { vars } from "./src/config/dotenv";
-import { setupProxy } from "./src/proxy";
-import { ip } from "./src/config/ip";
+import { createApp } from "./src/app";
+import { loadConfig } from "./src/config/dotenv";
 
-const app = express();
-const server = http.createServer(app);
+const config = loadConfig();
+const app = createApp(config);
 
-app.use(cors({
-  origin: ["http://localhost:5174", "http://192.168.26.90", "http://localhost", "http://localhost:5173", "http://10.100.1.43:5050",
-    "http://10.100.1.43:3046", "http://10.100.1.43:9137", "http://10.100.1.43/replicacao-sest/telas-itb", "http://10.100.1.43", "http://localhost:3000", "http://10.110.21.53", "http://10.110.21.53:3000", "http://10.110.20.178:5173"], credentials: true
-}));
+const server = app.listen(config.port, "0.0.0.0", (error?: Error) => {
+  if (error) {
+    throw error;
+  }
 
-app.use(helmet());
-setupProxy(app, server);
-
-app.get("/", (_req: Request, res: Response) => {
-  res.json({ message: "Dass API Gateway is running!" });
-});
-
-server.listen(vars.GATEWAY_PORT, () => {
   console.log(
-    `Dass API Gateway running on http://${ip}:${vars.GATEWAY_PORT} in ${process.env.DEV_ENV ? "Development" : "Production"
-    } mode.`
+    `Dass API Gateway running on port ${config.port} in ${config.isDevelopment ? "Development" : "Production"} mode.`,
   );
 });
+
+let shuttingDown = false;
+
+const shutdown = () => {
+  if (shuttingDown) {
+    return;
+  }
+  shuttingDown = true;
+
+  const deadline = setTimeout(() => {
+    console.error("Timed out while stopping Dass API Gateway; closing active connections.");
+    server.closeAllConnections();
+    process.exitCode = 1;
+  }, 10_000);
+  deadline.unref();
+
+  server.closeIdleConnections();
+  server.close((error) => {
+    clearTimeout(deadline);
+    if (error) {
+      console.error("Failed to stop Dass API Gateway cleanly.", error);
+      process.exitCode = 1;
+    }
+  });
+};
+
+process.on("SIGINT", shutdown);
+process.on("SIGTERM", shutdown);
