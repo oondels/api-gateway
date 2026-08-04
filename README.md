@@ -1,182 +1,200 @@
 # Dass API Gateway
 
-Gateway HTTP em Node.js/TypeScript para centralizar requisicoes e redirecionar para outras APIs via proxy.
+Gateway HTTP dos serviços internos da Dass. A aplicação recebe chamadas em `/api`, seleciona o destino pelo prefixo e encaminha a requisição sem interpretar ou transformar seu conteúdo.
 
-## Visao Geral
+## Arquitetura
 
-Este projeto expoe um endpoint de healthcheck e encaminha as rotas em `/api/*` para APIs de destino configuradas via variavel de ambiente.
+```text
+Cliente
+  |
+  v
+Express 5: CORS -> Helmet -> log -> políticas opt-in
+  |
+  v
+Proxy único com roteamento por tabela
+  |-- /api/<serviço> -> serviço específico
+  `-- /api/*         -> MAIN_SERVICE
+```
 
-- Base: Express + TypeScript
-- Proxy: `http-proxy-middleware`
-- Seguranca base: `helmet`, `cors`
-- Container: Docker + Docker Compose
+O gateway usa uma única instância de `http-proxy-middleware`. A tabela de `src/proxy.ts` contém os destinos específicos e o fallback; sua ordem é parte do contrato.
+
+O prefixo usado na seleção é removido no encaminhamento:
+
+```text
+GET /api/telas/usuarios?ativo=true
+ -> GET <TELAS_SERVICE>/usuarios?ativo=true
+```
+
+Método, query string, corpo, content type, cookies, autorização, status e headers de resposta são preservados. Isso inclui os cookies `token` e `refreshToken` emitidos pelo `dass_auth_service`, que é o `MAIN_SERVICE` atual.
 
 ## Stack
 
-- Node.js 20
-- TypeScript
-- Express
-- http-proxy-middleware
-- Docker / Docker Compose
+- Node.js 24 LTS
+- TypeScript 7
+- Express 5
+- `http-proxy-middleware` 4
+- `cors`, `helmet` e `morgan`
+- Docker e Docker Compose
+- Testes com `node:test`
 
-## Estrutura do Projeto
+## Estrutura
 
 ```text
 .
-├── index.ts
+├── index.ts                    # configuração, listen e encerramento gracioso
 ├── src/
-│   ├── proxy.ts
-│   ├── loadBalancer.ts
-│   ├── config/
-│   │   ├── dotenv.ts
-│   │   └── ip.ts
-│   ├── middleware/
-│   │   ├── auth.ts
-│   │   └── rateLimit.ts
-│   └── types/
-│       └── express.d.ts
+│   ├── app.ts                  # Express, CORS, Helmet, logs e políticas
+│   ├── proxy.ts                # tabela e roteamento dos proxies
+│   └── config/
+│       └── dotenv.ts           # carga e validação da configuração
+├── tests/
+│   └── gateway.test.js         # contratos HTTP e operacionais
 ├── Dockerfile
 ├── docker-compose.yml
 ├── package.json
 └── tsconfig.json
 ```
 
-## Variaveis de Ambiente
-
-O projeto carrega:
-
-- `.env` quando `DEV_ENV` estiver definido
-- `.env.production` quando `DEV_ENV` nao estiver definido
-
-Variaveis usadas:
-
-- `DEV_ENV` (ex: `development`)
-- `GATEWAY_PORT` (ex: `2307`)
-- `MAIN_SERVICE` (ex: `http://main-service:2121`)
-- `JWT_SECRET` (usada no middleware de autenticacao)
-
-### Exemplo de `.env`
-
-```env
-DEV_ENV=development
-GATEWAY_PORT=2307
-MAIN_SERVICE=http://localhost:2121
-JWT_SECRET=sua_chave_jwt_aqui
-```
-
-## Como Rodar Localmente
-
-### 1. Instalar dependencias
-
-```bash
-npm install
-```
-
-### 2. Executar em desenvolvimento
-
-```bash
-npm run dev
-```
-
-A API sobe em:
-
-- `http://localhost:2307`
-
-## Scripts
-
-- `npm run dev`: sobe em modo desenvolvimento com `nodemon` + `ts-node`
-- `npm run build`: compila TypeScript para `dist/`
-- `npm test`: placeholder (nao ha testes configurados)
-
-## Endpoints
+## Rotas
 
 ### Healthcheck
 
-- `GET /`
-- Resposta esperada:
+`GET /`
 
 ```json
 {
-	"message": "Dass API Gateway is running!"
+  "message": "Dass API Gateway is running!"
 }
 ```
 
-### Proxy principal
+O healthcheck confirma apenas o processo HTTP; ele não consulta os destinos.
 
-- `ALL /api/*`
-- Encaminha para `MAIN_SERVICE`
-- Remove o prefixo `/api` antes de enviar para o servico de destino
+### Proxies específicos
 
-Exemplo:
+| Prefixo público | Variável de destino |
+| --- | --- |
+| `/api/telas` | `TELAS_SERVICE` |
+| `/api/sobracorte` | `SOBRACORTE_SERVICE` |
+| `/api/upload` | `UPLOAD_SERVICE` |
+| `/api/diesel` | `DIESEL_SERVICE` |
+| `/api/porta-emerg` | `PORTA_EMERG_SERVICE` |
+| `/api/portaria` | `PORTARIA_SERVICE` |
+| `/api/index-informativo` | `INDEX_INFORMATIVO_SERVICE` |
+| `/api/automation` | `AUTOMATION_SERVICE` |
+| `/api/dp` | `DP_SERVICE` |
+| `/api/quimico` | `QUIMICO_SERVICE` |
+| `/api/pcp` | `PCP_SERVICE` |
+| `/api/refeitorio` | `REFEITORIO_SERVICE` |
+| `/api/lean` | `LEAN_SERVICE` |
+| `/api/att-ota` | `ATT_OTA_SERVICE` |
+| `/api/solicitacao-brinde` | `SOLICITACAO_BRINDE_SERVICE` |
+| `/api/checklist-maquina` | `CHECKLIST_MAQUINA_SERVICE` |
+| `/api/almoxarifado-ti` | `ALMOXARIFADO_TI` |
+| `/api/dass-users` | `DASS_USERS` |
+| `/api/synapse-ti` | `SYNAPSE_TI` |
 
-- Requisicao no gateway: `GET /api/users`
-- Requisicao na API de destino: `GET /users`
+Qualquer outro caminho iniciado por `/api` usa `MAIN_SERVICE` e perde somente o prefixo `/api`:
+
+```text
+POST /api/auth/login -> POST <MAIN_SERVICE>/auth/login
+```
+
+## Configuração
+
+Quando `DEV_ENV` possui qualquer valor, a aplicação tenta carregar `.env`; sem `DEV_ENV`, tenta carregar `.env.production`. Variáveis já fornecidas pelo processo ou pelo Compose têm precedência.
+
+Configuração obrigatória:
+
+- `GATEWAY_PORT`: porta interna do processo, entre 1 e 65535.
+- `MAIN_SERVICE`: destino do fallback.
+- Todas as variáveis da tabela de proxies específicos.
+
+Configuração opcional:
+
+| Variável | Default | Efeito |
+| --- | --- | --- |
+| `CORS_ORIGINS` | vazio | Acrescenta origens, separadas por vírgula, à lista compatível existente. |
+| `RATE_LIMIT_ENABLED` | `false` | Ativa o limite apenas nas rotas `/api`. |
+| `RATE_LIMIT_WINDOW_MS` | `900000` | Janela do rate limit. |
+| `RATE_LIMIT_MAX` | `100` | Requisições permitidas por cliente/janela. |
+| `PROXY_TIMEOUT_MS` | `0` | Timeout do destino; `0` mantém o comportamento sem timeout configurado. |
+| `STANDARD_PROXY_ERRORS_ENABLED` | `false` | Retorna JSON `502` ou `504` em falhas do destino. |
+
+As opções operacionais permanecem desligadas por padrão para não alterar aplicações existentes.
+
+Use `.env.example` como inventário. URLs dentro da rede Docker devem usar o nome DNS e a porta interna do serviço:
+
+```env
+GATEWAY_PORT=2399
+MAIN_SERVICE=http://main-service:2399
+TELAS_SERVICE=http://telas-service:3000
+```
+
+Não versione arquivos `.env` nem credenciais.
+
+## Desenvolvimento e testes
+
+Requisitos: Node.js 24 e npm. O arquivo `.nvmrc` fixa a linha usada pelo projeto.
+
+```bash
+npm ci
+npm run dev
+```
+
+Scripts:
+
+- `npm run dev`: executa e observa TypeScript com `tsx`.
+- `npm run clean`: remove somente `dist/`.
+- `npm run build`: limpa e compila para `dist/`.
+- `npm start`: executa `dist/index.js`.
+- `npm test`: compila e executa a suíte de contratos.
+
+Os testes usam destinos HTTP simulados e cobrem todos os proxies, fallback, métodos/corpos/headers, cookies do auth, CORS, Helmet, logs, rate limit, timeout e erros padronizados.
 
 ## Docker
 
-### Build da imagem
+O build usa Node 24 em dois estágios e instala dependências reproduzivelmente com `npm ci`. A imagem final contém apenas dependências de produção e `dist/`; arquivos `.env` não entram no contexto nem na imagem.
 
-```bash
-docker build -t dass-gateway .
-```
+O Compose lê o `.env` em runtime e permite configurar as portas de forma independente:
 
-### Subir com Compose
+- `GATEWAY_PORT`: porta interna do Node.
+- `GATEWAY_HOST_PORT`: porta publicada no host.
+- Ambas usam `2399` somente como default do Compose.
 
-```bash
-docker compose up -d --build
-```
-
-Configuracao atual:
-
-- Porta publicada: `2307:2307`
-- Rede externa: `dass_private`
-- Container: `gateway-app`
-- Servico (hostname interno): `gateway`
-
-### Importante sobre rede Docker
-
-Para comunicacao entre containers na mesma rede, use nome do servico/container, nao `localhost`.
-
-Exemplo de `MAIN_SERVICE` dentro da rede Docker:
+Exemplos:
 
 ```env
-MAIN_SERVICE=http://nome-do-servico:2121
+# Mantém 2399 no host e usa 3000 dentro do container
+GATEWAY_HOST_PORT=2399
+GATEWAY_PORT=3000
 ```
 
-## Middlewares disponiveis
-
-Arquivos prontos no projeto:
-
-- `src/middleware/auth.ts`: validacao de JWT via cookie (`token`)
-- `src/middleware/rateLimit.ts`: limitador de 100 requisicoes por 15 minutos
-
-Observacao: no estado atual, esses dois middlewares existem no codigo, mas nao estao aplicados globalmente no `index.ts`.
-
-## Load Balancer
-
-Existe implementacao inicial em `src/loadBalancer.ts` (round-robin), atualmente nao integrada no bootstrap principal.
-Hoje, o gateway usa `setupProxy` de `src/proxy.ts`.
-
-## Producao
-
-Fluxo esperado:
-
-1. `npm run build`
-2. executar `node dist/index.js` (ou via container)
-3. definir `.env.production` com valores de producao
-
-## Troubleshooting
-
-- Erro ao subir no Compose por rede: verifique se a rede externa existe:
-
-```bash
-docker network ls
-```
-
-- Se nao existir, crie:
+Crie a rede externa uma vez e suba o serviço:
 
 ```bash
 docker network create dass_private
+docker compose up -d --build
 ```
 
-- Se o proxy retornar erro de conexao, valide `MAIN_SERVICE` e se o servico alvo esta acessivel.
+## Segurança e operação
+
+- Helmet permanece global.
+- CORS aceita credenciais e mantém a lista histórica por compatibilidade.
+- O gateway não autentica usuários. Autenticação, refresh e revogação pertencem ao serviço de autenticação.
+- Logs registram método, caminho sem query string, status e duração; cookies, tokens e corpos não são registrados.
+- Configuração ausente ou inválida impede a inicialização com uma lista dos campos incorretos.
+- `SIGINT` e `SIGTERM` fecham conexões ociosas e aguardam até 10 segundos pelas conexões ativas.
+
+## Balanceamento de carga
+
+Não existe balanceamento dentro do processo. O protótipo round-robin anterior tinha somente uma instância, não era chamado e não possuía healthcheck ou retirada de destinos defeituosos, por isso foi removido.
+
+Para escalar, configure `MAIN_SERVICE` ou outro destino com o endereço de um balanceador de infraestrutura, como ingress, Nginx, HAProxy, Docker Swarm ou Kubernetes. Antes de replicar o auth, ele precisa oferecer readiness confiável e compartilhar corretamente PostgreSQL, Redis e segredos JWT.
+
+## Troubleshooting
+
+- **Configuração inválida:** confira todas as variáveis obrigatórias listadas no erro de inicialização.
+- **Proxy não conecta:** valide URL, porta e resolução DNS a partir da rede do gateway.
+- **Rota usa o fallback:** confira se o prefixo existe na tabela de `src/proxy.ts`.
+- **Erro de CORS:** a origem precisa coincidir com a lista padrão ou `CORS_ORIGINS`; caminhos não fazem parte do header `Origin`.
+- **Healthcheck funciona, mas a API falha:** `/` não consulta os serviços de destino.
