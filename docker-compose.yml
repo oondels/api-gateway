@@ -9,7 +9,7 @@ services:
     env_file:
       - .env
     environment:
-      - DEV_ENV=development
+      - DEV_ENV=production
     restart: unless-stopped
     networks:
       - dass_private
