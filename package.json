@@ -4,7 +4,7 @@
   "main": "dist/index.js",
   "scripts": {
     "start": "node dist/index.js",
-    "dev": "DEV_ENV=development tsx watch index.ts",
+    "dev": "tsx watch index.ts",
     "clean": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\"",
     "build": "npm run clean && tsc",
     "test": "npm run build && node --test tests/*.test.js"

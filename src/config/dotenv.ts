@@ -28,7 +28,6 @@ export type ServiceEnvKey = (typeof SERVICE_ENV_KEYS)[number];
 
 export interface GatewayConfig {
   port: number;
-  isDevelopment: boolean;
   services: Record<ServiceEnvKey, string>;
   additionalCorsOrigins: string[];
   rateLimit: {
@@ -84,9 +83,8 @@ const parseInteger = (
 
 export const loadConfig = ({ env = process.env, loadEnvFile = true }: LoadConfigOptions = {}): GatewayConfig => {
   if (loadEnvFile) {
-    const envFile = env.DEV_ENV ? ".env" : ".env.production";
     dotenv.config({
-      path: path.resolve(process.cwd(), envFile),
+      path: path.resolve(process.cwd(), ".env"),
       processEnv: env,
       quiet: true,
     });
@@ -153,7 +151,6 @@ export const loadConfig = ({ env = process.env, loadEnvFile = true }: LoadConfig
 
   return {
     port,
-    isDevelopment: Boolean(env.DEV_ENV),
     services,
     additionalCorsOrigins,
     rateLimit: {

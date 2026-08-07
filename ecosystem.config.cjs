@@ -5,8 +5,7 @@ module.exports = {
       script: "dist/index.js",
       cwd: __dirname,
       env: {
-        DEV_ENV: "development",
-        NODE_ENV: "development",
+        NODE_ENV: "production",
       },
       autorestart: true,
       max_restarts: 10,

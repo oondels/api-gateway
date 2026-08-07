@@ -9,9 +9,7 @@ const server = app.listen(config.port, "0.0.0.0", (error?: Error) => {
     throw error;
   }
 
-  console.log(
-    `Dass API Gateway running on port ${config.port} in ${config.isDevelopment ? "Development" : "Production"} mode.`,
-  );
+  console.log(`Dass API Gateway running on port ${config.port}.`);
 });
 
 let shuttingDown = false;
