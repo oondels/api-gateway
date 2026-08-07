@@ -1,75 +1,45 @@
 # Dass API Gateway
 
-Gateway HTTP dos serviços internos da Dass. A aplicação recebe chamadas em `/api`, seleciona o destino pelo prefixo e encaminha a requisição sem interpretar ou transformar seu conteúdo.
+Aplicação única que fornece o ponto de entrada HTTP para os serviços internos da Dass. Ela recebe requisições em `/api`, identifica o serviço pelo prefixo da URL e encaminha a chamada ao destino configurado, sem interpretar ou transformar o conteúdo.
 
-## Arquitetura
+## Como funciona
 
 ```text
 Cliente
   |
   v
-Express 5: CORS -> Helmet -> log -> políticas opt-in
-  |
-  v
-Proxy único com roteamento por tabela
-  |-- /api/<serviço> -> serviço específico
-  `-- /api/*         -> MAIN_SERVICE
+Dass API Gateway
+  |-- /api/<aplicação>/... -> serviço configurado para a aplicação
+  `-- /api/...              -> MAIN_SERVICE
 ```
 
-O gateway usa uma única instância de `http-proxy-middleware`. A tabela de `src/proxy.ts` contém os destinos específicos e o fallback; sua ordem é parte do contrato.
-
-O prefixo usado na seleção é removido no encaminhamento:
+O gateway mantém uma tabela de rotas em `src/proxy.ts`. Para cada rota cadastrada, remove o prefixo público antes de encaminhar a chamada. Por exemplo:
 
 ```text
 GET /api/telas/usuarios?ativo=true
  -> GET <TELAS_SERVICE>/usuarios?ativo=true
 ```
 
-Método, query string, corpo, content type, cookies, autorização, status e headers de resposta são preservados. Isso inclui os cookies `token` e `refreshToken` emitidos pelo `dass_auth_service`, que é o `MAIN_SERVICE` atual.
-
-## Stack
-
-- Node.js 24 LTS
-- TypeScript 7
-- Express 5
-- `http-proxy-middleware` 4
-- `cors`, `helmet` e `morgan`
-- Docker e Docker Compose
-- Testes com `node:test`
-
-## Estrutura
+Uma rota que não esteja na tabela é encaminhada para `MAIN_SERVICE`, também sem o prefixo `/api`:
 
 ```text
-.
-├── index.ts                    # configuração, listen e encerramento gracioso
-├── src/
-│   ├── app.ts                  # Express, CORS, Helmet, logs e políticas
-│   ├── proxy.ts                # tabela e roteamento dos proxies
-│   └── config/
-│       └── dotenv.ts           # carga e validação da configuração
-├── tests/
-│   └── gateway.test.js         # contratos HTTP e operacionais
-├── Dockerfile
-├── docker-compose.yml
-├── package.json
-└── tsconfig.json
+POST /api/auth/login
+ -> POST <MAIN_SERVICE>/auth/login
 ```
 
-## Rotas
+O gateway preserva método HTTP, query string, corpo, `Content-Type`, cookies, cabeçalhos de autorização, status e cabeçalhos da resposta. Portanto, autenticação, emissão e renovação de cookies são responsabilidades do serviço de destino, não do gateway.
 
-### Healthcheck
+## Funcionalidades
 
-`GET /`
+- Proxy reverso para aplicações internas, selecionado pelo prefixo da rota.
+- Fallback para `MAIN_SERVICE` em caminhos `/api` não cadastrados.
+- Healthcheck em `GET /`, que valida somente se o processo HTTP está disponível.
+- CORS com credenciais, Helmet e logs de acesso sem query string.
+- Rate limit opcional somente para `/api`.
+- Timeout e respostas JSON `502`/`504` opcionais para falhas do destino.
+- Validação da configuração na inicialização e encerramento gracioso em `SIGINT` e `SIGTERM`.
 
-```json
-{
-  "message": "Dass API Gateway is running!"
-}
-```
-
-O healthcheck confirma apenas o processo HTTP; ele não consulta os destinos.
-
-### Proxies específicos
+## Rotas cadastradas
 
 | Prefixo público | Variável de destino |
 | --- | --- |
@@ -93,108 +63,118 @@ O healthcheck confirma apenas o processo HTTP; ele não consulta os destinos.
 | `/api/dass-users` | `DASS_USERS` |
 | `/api/synapse-ti` | `SYNAPSE_TI` |
 
-Qualquer outro caminho iniciado por `/api` usa `MAIN_SERVICE` e perde somente o prefixo `/api`:
+## Adicionar uma nova aplicação
 
-```text
-POST /api/auth/login -> POST <MAIN_SERVICE>/auth/login
-```
+Cada aplicação possui um prefixo público e uma variável de ambiente com a URL do serviço. Faça o cadastro nos três pontos abaixo no mesmo pull request.
+
+1. Defina um prefixo único, por exemplo `/api/estoque`, e uma variável correspondente, por exemplo `ESTOQUE_SERVICE`.
+2. Em `src/config/dotenv.ts`, inclua `ESTOQUE_SERVICE` em `SERVICE_ENV_KEYS`. Assim, a URL passa a ser obrigatória e fica disponível ao proxy com tipagem.
+3. Em `src/proxy.ts`, adicione a rota em `PROXY_ROUTES`:
+
+   ```ts
+   { prefix: "/api/estoque", service: "ESTOQUE_SERVICE" },
+   ```
+
+4. Inclua `ESTOQUE_SERVICE=` em `.env.example` e configure a URL real em cada ambiente. Na rede Docker, use o nome DNS do serviço e sua porta interna, por exemplo `ESTOQUE_SERVICE=http://estoque-service:3000`.
+5. Atualize a tabela de rotas deste README e execute `npm test`.
+
+A suíte cria um destino para cada item de `PROXY_ROUTES`; por isso, o teste confirma que a nova rota seleciona o serviço certo e remove o prefixo. Não reutilize prefixos nem variáveis existentes. Como todas as variáveis da lista são obrigatórias, o deploy também deve receber o novo valor antes de iniciar a aplicação.
 
 ## Configuração
 
-Quando `DEV_ENV` possui qualquer valor, a aplicação tenta carregar `.env`; sem `DEV_ENV`, tenta carregar `.env.production`. Variáveis já fornecidas pelo processo ou pelo Compose têm precedência.
+A aplicação sempre lê `.env`. Variáveis já presentes no ambiente do processo ou no Docker Compose têm precedência sobre esse arquivo.
+
+Comece pelo inventário de variáveis:
+
+```bash
+cp .env.example .env
+```
 
 Configuração obrigatória:
 
 - `GATEWAY_PORT`: porta interna do processo, entre 1 e 65535.
-- `MAIN_SERVICE`: destino do fallback.
-- Todas as variáveis da tabela de proxies específicos.
+- `MAIN_SERVICE`: URL do destino usado no fallback.
+- Todas as variáveis de destino da tabela de rotas.
 
 Configuração opcional:
 
-| Variável | Default | Efeito |
+| Variável | Padrão | Uso |
 | --- | --- | --- |
-| `CORS_ORIGINS` | vazio | Acrescenta origens, separadas por vírgula, à lista compatível existente. |
-| `RATE_LIMIT_ENABLED` | `false` | Ativa o limite apenas nas rotas `/api`. |
-| `RATE_LIMIT_WINDOW_MS` | `900000` | Janela do rate limit. |
-| `RATE_LIMIT_MAX` | `100` | Requisições permitidas por cliente/janela. |
-| `PROXY_TIMEOUT_MS` | `0` | Timeout do destino; `0` mantém o comportamento sem timeout configurado. |
-| `STANDARD_PROXY_ERRORS_ENABLED` | `false` | Retorna JSON `502` ou `504` em falhas do destino. |
+| `CORS_ORIGINS` | vazio | Adiciona origens separadas por vírgula à lista permitida. |
+| `RATE_LIMIT_ENABLED` | `false` | Ativa limite de requisições em `/api`. |
+| `RATE_LIMIT_WINDOW_MS` | `900000` | Define a janela do rate limit em milissegundos. |
+| `RATE_LIMIT_MAX` | `100` | Define requisições permitidas por cliente e janela. |
+| `PROXY_TIMEOUT_MS` | `0` | Define timeout do destino; `0` não configura timeout. |
+| `STANDARD_PROXY_ERRORS_ENABLED` | `false` | Retorna `502` ou `504` em JSON quando o destino falha. |
+| `GATEWAY_HOST_PORT` | `2399` no Compose | Define a porta publicada pelo Docker. |
 
-As opções operacionais permanecem desligadas por padrão para não alterar aplicações existentes.
-
-Use `.env.example` como inventário. URLs dentro da rede Docker devem usar o nome DNS e a porta interna do serviço:
+Exemplo mínimo de desenvolvimento:
 
 ```env
 GATEWAY_PORT=2399
-MAIN_SERVICE=http://main-service:2399
+MAIN_SERVICE=http://main-service:3000
 TELAS_SERVICE=http://telas-service:3000
+# Preencha também todas as demais variáveis de destino do .env.example.
 ```
 
-Não versione arquivos `.env` nem credenciais.
+Não versione `.env` ou credenciais.
 
-## Desenvolvimento e testes
+## Uso
 
-Requisitos: Node.js 24 e npm. O arquivo `.nvmrc` fixa a linha usada pelo projeto.
+### Desenvolvimento local
+
+Requisitos: Node.js 24 e npm. O modo de desenvolvimento observa os arquivos; ambos os modos usam o mesmo `.env`.
 
 ```bash
 npm ci
 npm run dev
 ```
 
-Scripts:
+O processo atende na porta definida por `GATEWAY_PORT`. Verifique sua disponibilidade com:
 
-- `npm run dev`: executa e observa TypeScript com `tsx`.
-- `npm run clean`: remove somente `dist/`.
-- `npm run build`: limpa e compila para `dist/`.
-- `npm start`: executa `dist/index.js`.
-- `npm test`: compila e executa a suíte de contratos.
-
-Os testes usam destinos HTTP simulados e cobrem todos os proxies, fallback, métodos/corpos/headers, cookies do auth, CORS, Helmet, logs, rate limit, timeout e erros padronizados.
-
-## Docker
-
-O build usa Node 24 em dois estágios e instala dependências reproduzivelmente com `npm ci`. A imagem final contém apenas dependências de produção e `dist/`; arquivos `.env` não entram no contexto nem na imagem.
-
-O Compose lê o `.env` em runtime e permite configurar as portas de forma independente:
-
-- `GATEWAY_PORT`: porta interna do Node.
-- `GATEWAY_HOST_PORT`: porta publicada no host.
-- Ambas usam `2399` somente como default do Compose.
-
-Exemplos:
-
-```env
-# Mantém 2399 no host e usa 3000 dentro do container
-GATEWAY_HOST_PORT=2399
-GATEWAY_PORT=3000
+```bash
+curl http://localhost:2399/
 ```
 
-Crie a rede externa uma vez e suba o serviço:
+### Produção com Docker
+
+Crie a rede externa uma única vez e então construa e inicie a aplicação:
 
 ```bash
 docker network create dass_private
 docker compose up -d --build
 ```
 
-## Segurança e operação
+O Compose publica `${GATEWAY_HOST_PORT:-2399}` no host e executa o Node em `${GATEWAY_PORT:-2399}`. Os destinos configurados nessa rede devem usar nome DNS e porta interna do container, nunca `localhost`.
 
-- Helmet permanece global.
-- CORS aceita credenciais e mantém a lista histórica por compatibilidade.
-- O gateway não autentica usuários. Autenticação, refresh e revogação pertencem ao serviço de autenticação.
-- Logs registram método, caminho sem query string, status e duração; cookies, tokens e corpos não são registrados.
-- Configuração ausente ou inválida impede a inicialização com uma lista dos campos incorretos.
-- `SIGINT` e `SIGTERM` fecham conexões ociosas e aguardam até 10 segundos pelas conexões ativas.
+## Scripts e testes
 
-## Balanceamento de carga
+- `npm run dev`: executa TypeScript em modo observação.
+- `npm run build`: limpa `dist/` e compila o projeto.
+- `npm start`: executa a versão compilada.
+- `npm test`: compila e executa os contratos HTTP e operacionais.
 
-Não existe balanceamento dentro do processo. O protótipo round-robin anterior tinha somente uma instância, não era chamado e não possuía healthcheck ou retirada de destinos defeituosos, por isso foi removido.
+Os testes cobrem healthcheck, todas as rotas específicas, fallback, encaminhamento de método/corpo/cookies/cabeçalhos, CORS, Helmet, logs, rate limit, timeout e falhas de proxy.
 
-Para escalar, configure `MAIN_SERVICE` ou outro destino com o endereço de um balanceador de infraestrutura, como ingress, Nginx, HAProxy, Docker Swarm ou Kubernetes. Antes de replicar o auth, ele precisa oferecer readiness confiável e compartilhar corretamente PostgreSQL, Redis e segredos JWT.
+## Estrutura
 
-## Troubleshooting
+```text
+.
+├── index.ts                    # inicialização e encerramento gracioso
+├── src/
+│   ├── app.ts                  # Express, segurança, logs e políticas opcionais
+│   ├── proxy.ts                # tabela e encaminhamento das rotas
+│   └── config/dotenv.ts        # carga e validação das variáveis
+├── tests/gateway.test.js       # contratos do gateway
+├── .env.example                # inventário de configuração
+├── docker-compose.yml
+└── Dockerfile
+```
 
-- **Configuração inválida:** confira todas as variáveis obrigatórias listadas no erro de inicialização.
-- **Proxy não conecta:** valide URL, porta e resolução DNS a partir da rede do gateway.
-- **Rota usa o fallback:** confira se o prefixo existe na tabela de `src/proxy.ts`.
-- **Erro de CORS:** a origem precisa coincidir com a lista padrão ou `CORS_ORIGINS`; caminhos não fazem parte do header `Origin`.
-- **Healthcheck funciona, mas a API falha:** `/` não consulta os serviços de destino.
+## Diagnóstico rápido
+
+- **Falha na inicialização:** complete as variáveis obrigatórias indicadas no erro.
+- **Rota usa `MAIN_SERVICE`:** confirme o prefixo em `src/proxy.ts`.
+- **Proxy não conecta:** valide URL, porta e DNS a partir da rede do gateway.
+- **CORS bloqueado:** inclua a origem completa em `CORS_ORIGINS`; caminhos não fazem parte do header `Origin`.
+- **Healthcheck responde, mas a API falha:** `GET /` não consulta os serviços de destino.
