@@ -1,182 +1,180 @@
 # Dass API Gateway
 
-Gateway HTTP em Node.js/TypeScript para centralizar requisicoes e redirecionar para outras APIs via proxy.
+Aplicação única que fornece o ponto de entrada HTTP para os serviços internos da Dass. Ela recebe requisições em `/api`, identifica o serviço pelo prefixo da URL e encaminha a chamada ao destino configurado, sem interpretar ou transformar o conteúdo.
 
-## Visao Geral
-
-Este projeto expoe um endpoint de healthcheck e encaminha as rotas em `/api/*` para APIs de destino configuradas via variavel de ambiente.
-
-- Base: Express + TypeScript
-- Proxy: `http-proxy-middleware`
-- Seguranca base: `helmet`, `cors`
-- Container: Docker + Docker Compose
-
-## Stack
-
-- Node.js 20
-- TypeScript
-- Express
-- http-proxy-middleware
-- Docker / Docker Compose
-
-## Estrutura do Projeto
+## Como funciona
 
 ```text
-.
-├── index.ts
-├── src/
-│   ├── proxy.ts
-│   ├── loadBalancer.ts
-│   ├── config/
-│   │   ├── dotenv.ts
-│   │   └── ip.ts
-│   ├── middleware/
-│   │   ├── auth.ts
-│   │   └── rateLimit.ts
-│   └── types/
-│       └── express.d.ts
-├── Dockerfile
-├── docker-compose.yml
-├── package.json
-└── tsconfig.json
+Cliente
+  |
+  v
+Dass API Gateway
+  |-- /api/<aplicação>/... -> serviço configurado para a aplicação
+  `-- /api/...              -> MAIN_SERVICE
 ```
 
-## Variaveis de Ambiente
+O gateway mantém uma tabela de rotas em `src/proxy.ts`. Para cada rota cadastrada, remove o prefixo público antes de encaminhar a chamada. Por exemplo:
 
-O projeto carrega:
+```text
+GET /api/telas/usuarios?ativo=true
+ -> GET <TELAS_SERVICE>/usuarios?ativo=true
+```
 
-- `.env` quando `DEV_ENV` estiver definido
-- `.env.production` quando `DEV_ENV` nao estiver definido
+Uma rota que não esteja na tabela é encaminhada para `MAIN_SERVICE`, também sem o prefixo `/api`:
 
-Variaveis usadas:
+```text
+POST /api/auth/login
+ -> POST <MAIN_SERVICE>/auth/login
+```
 
-- `DEV_ENV` (ex: `development`)
-- `GATEWAY_PORT` (ex: `2307`)
-- `MAIN_SERVICE` (ex: `http://main-service:2121`)
-- `JWT_SECRET` (usada no middleware de autenticacao)
+O gateway preserva método HTTP, query string, corpo, `Content-Type`, cookies, cabeçalhos de autorização, status e cabeçalhos da resposta. Portanto, autenticação, emissão e renovação de cookies são responsabilidades do serviço de destino, não do gateway.
 
-### Exemplo de `.env`
+## Funcionalidades
+
+- Proxy reverso para aplicações internas, selecionado pelo prefixo da rota.
+- Fallback para `MAIN_SERVICE` em caminhos `/api` não cadastrados.
+- Healthcheck em `GET /`, que valida somente se o processo HTTP está disponível.
+- CORS com credenciais, Helmet e logs de acesso sem query string.
+- Rate limit opcional somente para `/api`.
+- Timeout e respostas JSON `502`/`504` opcionais para falhas do destino.
+- Validação da configuração na inicialização e encerramento gracioso em `SIGINT` e `SIGTERM`.
+
+## Rotas cadastradas
+
+| Prefixo público | Variável de destino |
+| --- | --- |
+| `/api/telas` | `TELAS_SERVICE` |
+| `/api/sobracorte` | `SOBRACORTE_SERVICE` |
+| `/api/upload` | `UPLOAD_SERVICE` |
+| `/api/diesel` | `DIESEL_SERVICE` |
+| `/api/porta-emerg` | `PORTA_EMERG_SERVICE` |
+| `/api/portaria` | `PORTARIA_SERVICE` |
+| `/api/index-informativo` | `INDEX_INFORMATIVO_SERVICE` |
+| `/api/automation` | `AUTOMATION_SERVICE` |
+| `/api/dp` | `DP_SERVICE` |
+| `/api/quimico` | `QUIMICO_SERVICE` |
+| `/api/pcp` | `PCP_SERVICE` |
+| `/api/refeitorio` | `REFEITORIO_SERVICE` |
+| `/api/lean` | `LEAN_SERVICE` |
+| `/api/att-ota` | `ATT_OTA_SERVICE` |
+| `/api/solicitacao-brinde` | `SOLICITACAO_BRINDE_SERVICE` |
+| `/api/checklist-maquina` | `CHECKLIST_MAQUINA_SERVICE` |
+| `/api/almoxarifado-ti` | `ALMOXARIFADO_TI` |
+| `/api/dass-users` | `DASS_USERS` |
+| `/api/synapse-ti` | `SYNAPSE_TI` |
+
+## Adicionar uma nova aplicação
+
+Cada aplicação possui um prefixo público e uma variável de ambiente com a URL do serviço. Faça o cadastro nos três pontos abaixo no mesmo pull request.
+
+1. Defina um prefixo único, por exemplo `/api/estoque`, e uma variável correspondente, por exemplo `ESTOQUE_SERVICE`.
+2. Em `src/config/dotenv.ts`, inclua `ESTOQUE_SERVICE` em `SERVICE_ENV_KEYS`. Assim, a URL passa a ser obrigatória e fica disponível ao proxy com tipagem.
+3. Em `src/proxy.ts`, adicione a rota em `PROXY_ROUTES`:
+
+   ```ts
+   { prefix: "/api/estoque", service: "ESTOQUE_SERVICE" },
+   ```
+
+4. Inclua `ESTOQUE_SERVICE=` em `.env.example` e configure a URL real em cada ambiente. Na rede Docker, use o nome DNS do serviço e sua porta interna, por exemplo `ESTOQUE_SERVICE=http://estoque-service:3000`.
+5. Atualize a tabela de rotas deste README e execute `npm test`.
+
+A suíte cria um destino para cada item de `PROXY_ROUTES`; por isso, o teste confirma que a nova rota seleciona o serviço certo e remove o prefixo. Não reutilize prefixos nem variáveis existentes. Como todas as variáveis da lista são obrigatórias, o deploy também deve receber o novo valor antes de iniciar a aplicação.
+
+## Configuração
+
+A aplicação sempre lê `.env`. Variáveis já presentes no ambiente do processo ou no Docker Compose têm precedência sobre esse arquivo.
+
+Comece pelo inventário de variáveis:
+
+```bash
+cp .env.example .env
+```
+
+Configuração obrigatória:
+
+- `GATEWAY_PORT`: porta interna do processo, entre 1 e 65535.
+- `MAIN_SERVICE`: URL do destino usado no fallback.
+- Todas as variáveis de destino da tabela de rotas.
+
+Configuração opcional:
+
+| Variável | Padrão | Uso |
+| --- | --- | --- |
+| `CORS_ORIGINS` | vazio | Adiciona origens separadas por vírgula à lista permitida. |
+| `RATE_LIMIT_ENABLED` | `false` | Ativa limite de requisições em `/api`. |
+| `RATE_LIMIT_WINDOW_MS` | `900000` | Define a janela do rate limit em milissegundos. |
+| `RATE_LIMIT_MAX` | `100` | Define requisições permitidas por cliente e janela. |
+| `PROXY_TIMEOUT_MS` | `0` | Define timeout do destino; `0` não configura timeout. |
+| `STANDARD_PROXY_ERRORS_ENABLED` | `false` | Retorna `502` ou `504` em JSON quando o destino falha. |
+| `GATEWAY_HOST_PORT` | `2399` no Compose | Define a porta publicada pelo Docker. |
+
+Exemplo mínimo de desenvolvimento:
 
 ```env
-DEV_ENV=development
-GATEWAY_PORT=2307
-MAIN_SERVICE=http://localhost:2121
-JWT_SECRET=sua_chave_jwt_aqui
+GATEWAY_PORT=2399
+MAIN_SERVICE=http://main-service:3000
+TELAS_SERVICE=http://telas-service:3000
+# Preencha também todas as demais variáveis de destino do .env.example.
 ```
 
-## Como Rodar Localmente
+Não versione `.env` ou credenciais.
 
-### 1. Instalar dependencias
+## Uso
 
-```bash
-npm install
-```
+### Desenvolvimento local
 
-### 2. Executar em desenvolvimento
+Requisitos: Node.js 24 e npm. O modo de desenvolvimento observa os arquivos; ambos os modos usam o mesmo `.env`.
 
 ```bash
+npm ci
 npm run dev
 ```
 
-A API sobe em:
-
-- `http://localhost:2307`
-
-## Scripts
-
-- `npm run dev`: sobe em modo desenvolvimento com `nodemon` + `ts-node`
-- `npm run build`: compila TypeScript para `dist/`
-- `npm test`: placeholder (nao ha testes configurados)
-
-## Endpoints
-
-### Healthcheck
-
-- `GET /`
-- Resposta esperada:
-
-```json
-{
-	"message": "Dass API Gateway is running!"
-}
-```
-
-### Proxy principal
-
-- `ALL /api/*`
-- Encaminha para `MAIN_SERVICE`
-- Remove o prefixo `/api` antes de enviar para o servico de destino
-
-Exemplo:
-
-- Requisicao no gateway: `GET /api/users`
-- Requisicao na API de destino: `GET /users`
-
-## Docker
-
-### Build da imagem
+O processo atende na porta definida por `GATEWAY_PORT`. Verifique sua disponibilidade com:
 
 ```bash
-docker build -t dass-gateway .
+curl http://localhost:2399/
 ```
 
-### Subir com Compose
+### Produção com Docker
 
-```bash
-docker compose up -d --build
-```
-
-Configuracao atual:
-
-- Porta publicada: `2307:2307`
-- Rede externa: `dass_private`
-- Container: `gateway-app`
-- Servico (hostname interno): `gateway`
-
-### Importante sobre rede Docker
-
-Para comunicacao entre containers na mesma rede, use nome do servico/container, nao `localhost`.
-
-Exemplo de `MAIN_SERVICE` dentro da rede Docker:
-
-```env
-MAIN_SERVICE=http://nome-do-servico:2121
-```
-
-## Middlewares disponiveis
-
-Arquivos prontos no projeto:
-
-- `src/middleware/auth.ts`: validacao de JWT via cookie (`token`)
-- `src/middleware/rateLimit.ts`: limitador de 100 requisicoes por 15 minutos
-
-Observacao: no estado atual, esses dois middlewares existem no codigo, mas nao estao aplicados globalmente no `index.ts`.
-
-## Load Balancer
-
-Existe implementacao inicial em `src/loadBalancer.ts` (round-robin), atualmente nao integrada no bootstrap principal.
-Hoje, o gateway usa `setupProxy` de `src/proxy.ts`.
-
-## Producao
-
-Fluxo esperado:
-
-1. `npm run build`
-2. executar `node dist/index.js` (ou via container)
-3. definir `.env.production` com valores de producao
-
-## Troubleshooting
-
-- Erro ao subir no Compose por rede: verifique se a rede externa existe:
-
-```bash
-docker network ls
-```
-
-- Se nao existir, crie:
+Crie a rede externa uma única vez e então construa e inicie a aplicação:
 
 ```bash
 docker network create dass_private
+docker compose up -d --build
 ```
 
-- Se o proxy retornar erro de conexao, valide `MAIN_SERVICE` e se o servico alvo esta acessivel.
+O Compose publica `${GATEWAY_HOST_PORT:-2399}` no host e executa o Node em `${GATEWAY_PORT:-2399}`. Os destinos configurados nessa rede devem usar nome DNS e porta interna do container, nunca `localhost`.
+
+## Scripts e testes
+
+- `npm run dev`: executa TypeScript em modo observação.
+- `npm run build`: limpa `dist/` e compila o projeto.
+- `npm start`: executa a versão compilada.
+- `npm test`: compila e executa os contratos HTTP e operacionais.
+
+Os testes cobrem healthcheck, todas as rotas específicas, fallback, encaminhamento de método/corpo/cookies/cabeçalhos, CORS, Helmet, logs, rate limit, timeout e falhas de proxy.
+
+## Estrutura
+
+```text
+.
+├── index.ts                    # inicialização e encerramento gracioso
+├── src/
+│   ├── app.ts                  # Express, segurança, logs e políticas opcionais
+│   ├── proxy.ts                # tabela e encaminhamento das rotas
+│   └── config/dotenv.ts        # carga e validação das variáveis
+├── tests/gateway.test.js       # contratos do gateway
+├── .env.example                # inventário de configuração
+├── docker-compose.yml
+└── Dockerfile
+```
+
+## Diagnóstico rápido
+
+- **Falha na inicialização:** complete as variáveis obrigatórias indicadas no erro.
+- **Rota usa `MAIN_SERVICE`:** confirme o prefixo em `src/proxy.ts`.
+- **Proxy não conecta:** valide URL, porta e DNS a partir da rede do gateway.
+- **CORS bloqueado:** inclua a origem completa em `CORS_ORIGINS`; caminhos não fazem parte do header `Origin`.
+- **Healthcheck responde, mas a API falha:** `GET /` não consulta os serviços de destino.

@@ -1,15 +1,14 @@
-version: "3.8"
-
 services:
   gateway:
+    image: dass-api-gateway:local
     build: .
     container_name: gateway-app
     ports:
-      - "2399:2399"
+      - "${GATEWAY_HOST_PORT:-2399}:${GATEWAY_PORT:-2399}"
     env_file:
       - .env
     environment:
-      - DEV_ENV=production
+      GATEWAY_PORT: "${GATEWAY_PORT:-2399}"
     restart: unless-stopped
     networks:
       - dass_private

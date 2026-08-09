@@ -1,167 +1,113 @@
-import { vars } from "./config/dotenv";
-import { createProxyMiddleware } from "http-proxy-middleware"
+import type { Express } from "express";
+import { ServerResponse, type IncomingMessage } from "node:http";
+import type { Socket } from "node:net";
+import { createProxyMiddleware, type Options } from "http-proxy-middleware";
+import type { GatewayConfig, ServiceEnvKey } from "./config/dotenv";
 
-export const setupProxy = (app: any, server: any) => {
-  app.use("/api/telas",
-    createProxyMiddleware({
-      target: vars.TELAS_SERVICE,
-      changeOrigin: true,
-      pathRewrite: { "^/api/telas": "" },
-    })
-  )
+export interface ProxyRoute {
+  prefix: string;
+  service: ServiceEnvKey;
+}
 
-  app.use("/api/sobracorte",
-    createProxyMiddleware({
-      target: vars.SOBRACORTE_SERVICE,
-      changeOrigin: true,
-      pathRewrite: { "^/api/sobracorte": "" },
-    })
-  )
+export const PROXY_ROUTES: readonly ProxyRoute[] = [
+  { prefix: "/api/telas", service: "TELAS_SERVICE" },
+  { prefix: "/api/sobracorte", service: "SOBRACORTE_SERVICE" },
+  { prefix: "/api/upload", service: "UPLOAD_SERVICE" },
+  { prefix: "/api/diesel", service: "DIESEL_SERVICE" },
+  { prefix: "/api/porta-emerg", service: "PORTA_EMERG_SERVICE" },
+  { prefix: "/api/portaria", service: "PORTARIA_SERVICE" },
+  { prefix: "/api/index-informativo", service: "INDEX_INFORMATIVO_SERVICE" },
+  { prefix: "/api/automation", service: "AUTOMATION_SERVICE" },
+  { prefix: "/api/dp", service: "DP_SERVICE" },
+  { prefix: "/api/quimico", service: "QUIMICO_SERVICE" },
+  { prefix: "/api/pcp", service: "PCP_SERVICE" },
+  { prefix: "/api/refeitorio", service: "REFEITORIO_SERVICE" },
+  { prefix: "/api/lean", service: "LEAN_SERVICE" },
+  { prefix: "/api/att-ota", service: "ATT_OTA_SERVICE" },
+  { prefix: "/api/solicitacao-brinde", service: "SOLICITACAO_BRINDE_SERVICE" },
+  { prefix: "/api/checklist-maquina", service: "CHECKLIST_MAQUINA_SERVICE" },
+  { prefix: "/api/almoxarifado-ti", service: "ALMOXARIFADO_TI" },
+  { prefix: "/api/dass-users", service: "DASS_USERS" },
+  { prefix: "/api/synapse-ti", service: "SYNAPSE_TI" },
+] as const;
 
-  app.use("/api/upload",
-    createProxyMiddleware({
-      target: vars.UPLOAD_SERVICE,
-      changeOrigin: true,
-      pathRewrite: { "^/api/upload": "" },
-    })
-  )
+const isTimeoutError = (error: Error, proxyTimeoutConfigured: boolean): boolean => {
+  const code = (error as NodeJS.ErrnoException).code ?? "";
+  return ["ETIMEDOUT", "ESOCKETTIMEDOUT"].includes(code) || (proxyTimeoutConfigured && code === "ECONNRESET");
+};
 
-  app.use("/api/diesel",
-    createProxyMiddleware({
-      target: vars.DIESEL_SERVICE,
-      changeOrigin: true,
-      pathRewrite: { "^/api/diesel": "" },
-    })
-  )
+const sendStandardProxyError = (
+  error: Error,
+  _request: IncomingMessage,
+  response: ServerResponse<IncomingMessage> | Socket,
+  proxyTimeoutConfigured: boolean,
+) => {
+  if (!(response instanceof ServerResponse)) {
+    response.destroy();
+    return;
+  }
 
-  app.use("/api/porta-emerg",
-    createProxyMiddleware({
-      target: vars.PORTA_EMERG_SERVICE,
-      changeOrigin: true,
-      pathRewrite: { "^/api/porta-emerg": "" },
-    })
-  )
+  if (response.headersSent) {
+    response.end();
+    return;
+  }
 
-  app.use("/api/portaria",
-    createProxyMiddleware({
-      target: vars.PORTARIA_SERVICE,
-      changeOrigin: true,
-      pathRewrite: { "^/api/portaria": "" },
-    })
-  )
+  const timedOut = isTimeoutError(error, proxyTimeoutConfigured);
+  response.writeHead(timedOut ? 504 : 502, { "Content-Type": "application/json; charset=utf-8" });
+  response.end(
+    JSON.stringify({
+      message: timedOut ? "Tempo limite ao acessar o serviço de destino." : "Serviço de destino indisponível.",
+    }),
+  );
+};
 
-  app.use("/api/index-informativo",
-    createProxyMiddleware({
-      target: vars.INDEX_INFORMATIVO_SERVICE,
-      changeOrigin: true,
-      pathRewrite: { "^/api/index-informativo": "" },
-    })
-  )
+const findProxyRoute = (request: IncomingMessage): ProxyRoute | undefined => {
+  const pathname = (request.url ?? "").split("?", 1)[0];
+  return PROXY_ROUTES.find(({ prefix }) => {
+    const relativePrefix = prefix.slice("/api".length);
+    return pathname === relativePrefix || pathname.startsWith(`${relativePrefix}/`);
+  });
+};
 
-  app.use("/api/automation",
-    createProxyMiddleware({
-      target: vars.AUTOMATION_SERVICE,
-      changeOrigin: true,
-      pathRewrite: { "^/api/automation": "" },
-    })
-  )
+const rewritePath = (path: string, request: IncomingMessage): string => {
+  const route = findProxyRoute(request);
+  if (!route) {
+    return path;
+  }
 
-  app.use("/api/dp",
-    createProxyMiddleware({
-      target: vars.DP_SERVICE,
-      changeOrigin: true,
-      pathRewrite: { "^/api/dp": "" },
-    })
-  )
+  const relativePrefix = route.prefix.slice("/api".length);
+  const rewrittenPath = path.slice(relativePrefix.length);
+  return rewrittenPath === "" || rewrittenPath.startsWith("?") ? `/${rewrittenPath}` : rewrittenPath;
+};
 
-  app.use("/api/quimico",
-    createProxyMiddleware({
-      target: vars.QUIMICO_SERVICE,
-      changeOrigin: true,
-      pathRewrite: { "^/api/quimico": "" },
-    })
-  )
+const createOptions = (config: GatewayConfig): Options => {
+  const options: Options = {
+    target: config.services.MAIN_SERVICE,
+    router: (request) => {
+      const route = findProxyRoute(request);
+      return route ? config.services[route.service] : config.services.MAIN_SERVICE;
+    },
+    changeOrigin: true,
+    pathRewrite: rewritePath,
+  };
 
-  app.use("/api/pcp",
-    createProxyMiddleware({
-      target: vars.PCP_SERVICE,
-      changeOrigin: true,
-      pathRewrite: { "^/api/pcp": "" },
-    })
-  )
+  if (config.proxyTimeoutMs > 0) {
+    options.proxyTimeout = config.proxyTimeoutMs;
+  }
 
-  app.use("/api/refeitorio",
-    createProxyMiddleware({
-      target: vars.REFEITORIO_SERVICE,
-      changeOrigin: true,
-      pathRewrite: { "^/api/refeitorio": "" },
-    })
-  )
+  if (config.standardProxyErrorsEnabled) {
+    options.on = {
+      error: (error, request, response) =>
+        sendStandardProxyError(error, request, response, config.proxyTimeoutMs > 0),
+    };
+  }
 
-  app.use("/api/lean",
-    createProxyMiddleware({
-      target: vars.LEAN_SERVICE,
-      changeOrigin: true,
-      pathRewrite: { "^/api/lean": "" },
-    })
-  )
+  return options;
+};
 
-  app.use("/api/att-ota",
-    createProxyMiddleware({
-      target: vars.ATT_OTA_SERVICE,
-      changeOrigin: true,
-      pathRewrite: { "^/api/att-ota": "" },
-    })
-  )
-
-  app.use("/api/solicitacao-brinde",
-    createProxyMiddleware({
-      target: vars.SOLICITACAO_BRINDE_SERVICE,
-      changeOrigin: true,
-      pathRewrite: { "^/api/solicitacao-brinde": "" },
-    })
-  )
-
-  app.use("/api/checklist-maquina",
-    createProxyMiddleware({
-      target: vars.CHECKLIST_MAQUINA_SERVICE,
-      changeOrigin: true,
-      pathRewrite: { "^/api/checklist-maquina": "" },
-    })
-  )
-
-  app.use("/api/almoxarifado-ti",
-    createProxyMiddleware({
-      target: vars.ALMOXARIFADO_TI,
-      changeOrigin: true,
-      pathRewrite: { "^/api/almoxarifado-ti": "" },
-    })
-  )
-
-  // TODO: Verificar possibilidade de migrar essa api para MAIN_SERVICE
-  app.use("/api/dass-users",
-    createProxyMiddleware({
-      target: vars.DASS_USERS,
-      changeOrigin: true,
-      pathRewrite: { "^/api/dass-users": "" },
-    })
-  )
-
-  app.use("/api/synapse-ti",
-    createProxyMiddleware({
-      target: vars.SYNAPSE_TI,
-      changeOrigin: true,
-      pathRewrite: { "^/api/synapse-ti": "" },
-    })
-  )
-
-  // Esse tem que ser o último
+export const setupProxy = (app: Express, config: GatewayConfig): void => {
   app.use(
     "/api",
-    createProxyMiddleware({
-      target: vars.MAIN_SERVICE,
-      changeOrigin: true,
-      pathRewrite: { "^/api": "" },
-    })
+    createProxyMiddleware(createOptions(config)),
   );
 };
