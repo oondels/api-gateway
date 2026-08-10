@@ -29,6 +29,7 @@ export const PROXY_ROUTES: readonly ProxyRoute[] = [
   { prefix: "/api/almoxarifado-ti", service: "ALMOXARIFADO_TI" },
   { prefix: "/api/dass-users", service: "DASS_USERS" },
   { prefix: "/api/synapse-ti", service: "SYNAPSE_TI" },
+  { prefix: "/api/pe-confirmado-teste", service: "PE_CONFIRMADO_TESTE" },
 ] as const;
 
 const isTimeoutError = (error: Error, proxyTimeoutConfigured: boolean): boolean => {

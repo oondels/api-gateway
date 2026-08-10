@@ -22,6 +22,7 @@ export const SERVICE_ENV_KEYS = [
   "DASS_USERS",
   "SYNAPSE_TI",
   "MAIN_SERVICE",
+  "PE_CONFIRMADO_TESTE",
 ] as const;
 
 export type ServiceEnvKey = (typeof SERVICE_ENV_KEYS)[number];
