@@ -10,6 +10,7 @@ export interface ProxyRoute {
 }
 
 export const PROXY_ROUTES: readonly ProxyRoute[] = [
+  { prefix: "/api/index-informativo", service: "INDEX_INFORMATIVO_SERVICE" },
   { prefix: "/api/telas", service: "TELAS_SERVICE" },
   { prefix: "/api/sobracorte", service: "SOBRACORTE_SERVICE" },
   { prefix: "/api/upload", service: "UPLOAD_SERVICE" },

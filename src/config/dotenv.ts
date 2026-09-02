@@ -2,6 +2,7 @@ import path from "node:path";
 import dotenv from "dotenv";
 
 export const SERVICE_ENV_KEYS = [
+  "INDEX_INFORMATIVO_SERVICE",
   "TELAS_SERVICE",
   "SOBRACORTE_SERVICE",
   "UPLOAD_SERVICE",
