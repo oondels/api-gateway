@@ -35,16 +35,13 @@ flowchart TD
         Diesel["Diesel Service (/api/diesel)"]
         PortaEmerg["Porta Emerg Service (/api/porta-emerg)"]
         Portaria["Portaria Service (/api/portaria)"]
-        IndexInf["Index Informativo (/api/index-informativo)"]
+        PortaRfid["Porta RFID (/api/porta-rfid)"]
         Automation["Automation Service (/api/automation)"]
         DP["DP Service (/api/dp)"]
         Quimico["Quimico Service (/api/quimico)"]
-        PCP["PCP Service (/api/pcp)"]
         Refeitorio["Refeitorio Service (/api/refeitorio)"]
-        Lean["Lean Service (/api/lean)"]
         AttOta["Att OTA Service (/api/att-ota)"]
         Brinde["Solicitação Brinde (/api/solicitacao-brinde)"]
-        Checklist["Checklist Maquina (/api/checklist-maquina)"]
         AlmoxTI["Almoxarifado TI (/api/almoxarifado-ti)"]
         DassUsers["Dass Users (/api/dass-users)"]
         SynapseTI["Synapse TI (/api/synapse-ti)"]
@@ -60,16 +57,13 @@ flowchart TD
     Router -->|/api/diesel/*| Diesel
     Router -->|/api/porta-emerg/*| PortaEmerg
     Router -->|/api/portaria/*| Portaria
-    Router -->|/api/index-informativo/*| IndexInf
+    Router -->|/api/porta-rfid/*| PortaRfid
     Router -->|/api/automation/*| Automation
     Router -->|/api/dp/*| DP
     Router -->|/api/quimico/*| Quimico
-    Router -->|/api/pcp/*| PCP
     Router -->|/api/refeitorio/*| Refeitorio
-    Router -->|/api/lean/*| Lean
     Router -->|/api/att-ota/*| AttOta
     Router -->|/api/solicitacao-brinde/*| Brinde
-    Router -->|/api/checklist-maquina/*| Checklist
     Router -->|/api/almoxarifado-ti/*| AlmoxTI
     Router -->|/api/dass-users/*| DassUsers
     Router -->|/api/synapse-ti/*| SynapseTI
@@ -294,16 +288,13 @@ Crie um arquivo `.env` (desenvolvimento) ou `.env.production` (produção) na ra
 | `DIESEL_SERVICE` | URL da API Diesel | `http://localhost:4001` |
 | `PORTA_EMERG_SERVICE` | URL da API Porta de Emergência | `http://localhost:4002` |
 | `PORTARIA_SERVICE` | URL da API Portaria | `http://localhost:4003` |
-| `INDEX_INFORMATIVO_SERVICE` | URL da API Index Informativo | `http://localhost:4004` |
+| `PORTA_RFID_SERVICE` | URL da API Porta RFID | `http://host.docker.internal:3010` |
 | `AUTOMATION_SERVICE` | URL da API de Automação | `http://localhost:4005` |
 | `DP_SERVICE` | URL da API de DP | `http://localhost:4006` |
 | `QUIMICO_SERVICE` | URL da API de Químico | `http://localhost:4007` |
-| `PCP_SERVICE` | URL da API PCP | `http://localhost:4008` |
 | `REFEITORIO_SERVICE` | URL da API Refeitório | `http://localhost:4009` |
-| `LEAN_SERVICE` | URL da API Lean | `http://localhost:4010` |
 | `ATT_OTA_SERVICE` | URL da API Att OTA | `http://localhost:4011` |
 | `SOLICITACAO_BRINDE_SERVICE` | URL da API Solicitacao Brinde | `http://localhost:4012` |
-| `CHECKLIST_MAQUINA_SERVICE` | URL da API Checklist Maquina | `http://localhost:4013` |
 | `ALMOXARIFADO_TI` | URL da API Almoxarifado TI | `http://localhost:4014` |
 | `DASS_USERS` | URL da API Dass Users | `http://localhost:4015` |
 | `SYNAPSE_TI` | URL da API Synapse TI | `http://localhost:4016` |

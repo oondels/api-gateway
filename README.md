@@ -49,16 +49,13 @@ O gateway preserva método HTTP, query string, corpo, `Content-Type`, cookies, c
 | `/api/diesel` | `DIESEL_SERVICE` |
 | `/api/porta-emerg` | `PORTA_EMERG_SERVICE` |
 | `/api/portaria` | `PORTARIA_SERVICE` |
-| `/api/index-informativo` | `INDEX_INFORMATIVO_SERVICE` |
+| `/api/porta-rfid` | `PORTA_RFID_SERVICE` |
 | `/api/automation` | `AUTOMATION_SERVICE` |
 | `/api/dp` | `DP_SERVICE` |
 | `/api/quimico` | `QUIMICO_SERVICE` |
-| `/api/pcp` | `PCP_SERVICE` |
 | `/api/refeitorio` | `REFEITORIO_SERVICE` |
-| `/api/lean` | `LEAN_SERVICE` |
 | `/api/att-ota` | `ATT_OTA_SERVICE` |
 | `/api/solicitacao-brinde` | `SOLICITACAO_BRINDE_SERVICE` |
-| `/api/checklist-maquina` | `CHECKLIST_MAQUINA_SERVICE` |
 | `/api/almoxarifado-ti` | `ALMOXARIFADO_TI` |
 | `/api/dass-users` | `DASS_USERS` |
 | `/api/synapse-ti` | `SYNAPSE_TI` |
