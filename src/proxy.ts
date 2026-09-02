@@ -31,6 +31,7 @@ export const PROXY_ROUTES: readonly ProxyRoute[] = [
   { prefix: "/api/synapse-ti", service: "SYNAPSE_TI" },
   { prefix: "/api/pe-confirmado-teste", service: "PE_CONFIRMADO_TESTE" },
   { prefix: "/api/amostras-tintas", service: "AMOSTRAS_TINTAS" },
+  { prefix: "/api/checklist-app", service: "CHECKLIST_APP_SERVICE" },
 ] as const;
 
 const isTimeoutError = (error: Error, proxyTimeoutConfigured: boolean): boolean => {

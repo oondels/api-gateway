@@ -24,6 +24,7 @@ export const SERVICE_ENV_KEYS = [
   "MAIN_SERVICE",
   "PE_CONFIRMADO_TESTE",
   "AMOSTRAS_TINTAS",
+  "CHECKLIST_APP_SERVICE",
 ] as const;
 
 export type ServiceEnvKey = (typeof SERVICE_ENV_KEYS)[number];

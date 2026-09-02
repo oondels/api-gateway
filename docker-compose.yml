@@ -1,15 +1,29 @@
 services:
   gateway:
-    image: dass-api-gateway:local
-    build: .
-    container_name: gateway-app
+    image: dass-api-gateway:${IMAGE_TAG:-local}
+
+    build:
+      context: .
+      dockerfile: Dockerfile
+
     ports:
       - "${GATEWAY_HOST_PORT:-2399}:${GATEWAY_PORT:-2399}"
+
     env_file:
       - .env
+
     environment:
       GATEWAY_PORT: "${GATEWAY_PORT:-2399}"
+
     restart: unless-stopped
+
+    mem_limit: 200m
+
+    deploy:
+      resources:
+        limits:
+          memory: 200M
+
     networks:
       - dass_private
 
