@@ -48,7 +48,7 @@ Rate limit está desativado por padrão e, quando habilitado, aplica-se a `/api`
 
 A entrada HTTP do Gateway coexiste com clientes diretos. O endpoint do ESP32 Diesel é `POST /read-signal` na porta `3021`, sem JWT; a tela usa Socket.IO diretamente nessa porta. A URL efetiva do firmware é uma configuração externa.
 
-PortaRFID mantém WebSocket de dispositivos e HTTP de clientes legados em `3010`. Suas rotas HTTP permanecem públicas por compatibilidade; o frontend Unix atual usa o Gateway para esses comandos. O Gateway não acrescenta uma barreira JWT a essas rotas.
+O projeto externo `rfid_lock` mantém o WebSocket dos dispositivos e a API HTTP da PortaRFID em `3010`. O frontend Unix usa o Gateway para os comandos HTTP, e `PORTA_RFID_SERVICE` deve apontar para esse processo. O Gateway não acrescenta uma barreira JWT a essas rotas.
 
 Portaria, Refeitório, Químico e portões também têm canais realtime diretos. Manter `/api/diesel` e `/api/porta-rfid` preserva os contratos HTTP e não substitui conexões de dispositivos.
 
