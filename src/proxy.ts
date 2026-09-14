@@ -30,6 +30,7 @@ export const PROXY_ROUTES: readonly ProxyRoute[] = [
   { prefix: "/api/pe-confirmado-teste", service: "PE_CONFIRMADO_TESTE" },
   { prefix: "/api/amostras-tintas", service: "AMOSTRAS_TINTAS" },
   { prefix: "/api/checklist-app", service: "CHECKLIST_APP_SERVICE" },
+  { prefix: "/api/certificados-dass", service: "CERTIFICADOS_DASS" },
 ] as const;
 
 const isTimeoutError = (error: Error, proxyTimeoutConfigured: boolean): boolean => {
