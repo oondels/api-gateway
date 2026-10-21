@@ -1,31 +1,9 @@
 import path from "node:path";
 import dotenv from "dotenv";
+import { SERVICE_ENV_KEYS, type ServiceEnvKey } from "./routes";
 
-export const SERVICE_ENV_KEYS = [
-  "INDEX_INFORMATIVO_SERVICE",
-  "TELAS_SERVICE",
-  "SOBRACORTE_SERVICE",
-  "UPLOAD_SERVICE",
-  "DIESEL_SERVICE",
-  "PORTA_EMERG_SERVICE",
-  "PORTARIA_SERVICE",
-  "PORTA_RFID_SERVICE",
-  "AUTOMATION_SERVICE",
-  "DP_SERVICE",
-  "QUIMICO_SERVICE",
-  "REFEITORIO_SERVICE",
-  "ATT_OTA_SERVICE",
-  "SOLICITACAO_BRINDE_SERVICE",
-  "ALMOXARIFADO_TI",
-  "DASS_USERS",
-  "SYNAPSE_TI",
-  "MAIN_SERVICE",
-  "PE_CONFIRMADO_TESTE",
-  "AMOSTRAS_TINTAS",
-  "CHECKLIST_APP_SERVICE",
-] as const;
-
-export type ServiceEnvKey = (typeof SERVICE_ENV_KEYS)[number];
+export { SERVICE_ENV_KEYS } from "./routes";
+export type { ServiceEnvKey } from "./routes";
 
 export interface GatewayConfig {
   port: number;
@@ -38,6 +16,7 @@ export interface GatewayConfig {
   };
   proxyTimeoutMs: number;
   standardProxyErrorsEnabled: boolean;
+  strictRouteMode: boolean;
 }
 
 interface LoadConfigOptions {
@@ -49,15 +28,12 @@ const parseBoolean = (value: string | undefined, defaultValue: boolean, key: str
   if (value === undefined || value === "") {
     return defaultValue;
   }
-
   if (["true", "1"].includes(value.toLowerCase())) {
     return true;
   }
-
   if (["false", "0"].includes(value.toLowerCase())) {
     return false;
   }
-
   throw new Error(`${key} must be true, false, 1 or 0.`);
 };
 
@@ -96,19 +72,19 @@ export const loadConfig = ({ env = process.env, loadEnvFile = true }: LoadConfig
 
   for (const key of SERVICE_ENV_KEYS) {
     const value = env[key]?.trim();
-    if (!value) {
+    if (!value && key === "MAIN_SERVICE") {
       errors.push(`${key} is required.`);
-      continue;
     }
-    services[key] = value;
+    services[key] = value || "";
   }
 
-  let port = 0;
+  let port = 2399;
   let rateLimitEnabled = false;
   let rateLimitWindowMs = 900_000;
   let rateLimitMax = 100;
-  let proxyTimeoutMs = 0;
-  let standardProxyErrorsEnabled = false;
+  let proxyTimeoutMs = 30_000;
+  let standardProxyErrorsEnabled = true;
+  let strictRouteMode = false;
 
   const capture = (parser: () => void) => {
     try {
@@ -119,7 +95,7 @@ export const loadConfig = ({ env = process.env, loadEnvFile = true }: LoadConfig
   };
 
   capture(() => {
-    port = parseInteger(env.GATEWAY_PORT, undefined, "GATEWAY_PORT", 1, 65_535);
+    port = parseInteger(env.GATEWAY_PORT, 2399, "GATEWAY_PORT", 1, 65_535);
   });
   capture(() => {
     rateLimitEnabled = parseBoolean(env.RATE_LIMIT_ENABLED, false, "RATE_LIMIT_ENABLED");
@@ -131,14 +107,17 @@ export const loadConfig = ({ env = process.env, loadEnvFile = true }: LoadConfig
     rateLimitMax = parseInteger(env.RATE_LIMIT_MAX, 100, "RATE_LIMIT_MAX", 1);
   });
   capture(() => {
-    proxyTimeoutMs = parseInteger(env.PROXY_TIMEOUT_MS, 0, "PROXY_TIMEOUT_MS", 0);
+    proxyTimeoutMs = parseInteger(env.PROXY_TIMEOUT_MS, 30_000, "PROXY_TIMEOUT_MS", 0);
   });
   capture(() => {
     standardProxyErrorsEnabled = parseBoolean(
       env.STANDARD_PROXY_ERRORS_ENABLED,
-      false,
+      true,
       "STANDARD_PROXY_ERRORS_ENABLED",
     );
+  });
+  capture(() => {
+    strictRouteMode = parseBoolean(env.STRICT_ROUTE_MODE, false, "STRICT_ROUTE_MODE");
   });
 
   if (errors.length > 0) {
@@ -161,5 +140,6 @@ export const loadConfig = ({ env = process.env, loadEnvFile = true }: LoadConfig
     },
     proxyTimeoutMs,
     standardProxyErrorsEnabled,
+    strictRouteMode,
   };
 };

@@ -1,8 +1,10 @@
 import { createApp } from "./src/app";
 import { loadConfig } from "./src/config/dotenv";
+import { setupWebSocketProxy } from "./src/proxy";
 
 const config = loadConfig();
-const app = createApp(config);
+let acceptingTraffic = true;
+const app = createApp(config, { lifecycle: { isReady: () => acceptingTraffic } });
 
 const server = app.listen(config.port, "0.0.0.0", (error?: Error) => {
   if (error) {
@@ -12,6 +14,8 @@ const server = app.listen(config.port, "0.0.0.0", (error?: Error) => {
   console.log(`Dass API Gateway running on port ${config.port}.`);
 });
 
+setupWebSocketProxy(server, config);
+
 let shuttingDown = false;
 
 const shutdown = () => {
@@ -19,6 +23,7 @@ const shutdown = () => {
     return;
   }
   shuttingDown = true;
+  acceptingTraffic = false;
 
   const deadline = setTimeout(() => {
     console.error("Timed out while stopping Dass API Gateway; closing active connections.");
