@@ -17,13 +17,13 @@ export const ROUTE_DEFINITIONS = [
   { prefix: "/api/att-ota", service: "ATT_OTA_SERVICE" },
   { prefix: "/api/solicitacao-brinde", service: "SOLICITACAO_BRINDE_SERVICE" },
   { prefix: "/api/almoxarifado-ti", service: "ALMOXARIFADO_TI" },
-  { prefix: "/api/dass-users", service: "DASS_USERS" },
+  { prefix: "/api/admin", service: "ADMIN_SERVICE" },
   { prefix: "/api/synapse-ti", service: "SYNAPSE_TI" },
   { prefix: "/api/pe-confirmado-teste", service: "PE_CONFIRMADO_TESTE" },
   { prefix: "/api/amostras-tintas", service: "AMOSTRAS_TINTAS" },
   { prefix: "/api/checklist-app", service: "CHECKLIST_APP_SERVICE" },
-  { prefix: "/api/coletores", service: "COLETORES_SERVICE" },
-  { prefix: "/api/config", service: "CONFIG_SERVICE" },
+  { prefix: "/api/coletores", service: "COLETORES_SERVICE" }, 
+  { prefix: "/api/certificados-dass", service: "CERTIFICADOS_DASS" },
 ] as const;
 
 export type RoutedServiceEnvKey = (typeof ROUTE_DEFINITIONS)[number]["service"];

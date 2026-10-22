@@ -98,8 +98,8 @@ test("liveness and readiness respond without probing upstream", async () => {
 
 test("route registry is the source for code, environment example and documentation", () => {
   assert.equal(PROXY_ROUTES, ROUTE_DEFINITIONS);
-  assert.equal(PROXY_ROUTES.length, 23);
-  assert.equal(SERVICE_ENV_KEYS.length, 24);
+  assert.equal(PROXY_ROUTES.length, 22);
+  assert.equal(SERVICE_ENV_KEYS.length, 23);
   assert.equal(SERVICE_ENV_KEYS[0], "MAIN_SERVICE");
 
   const documentedRoutes = [...fs.readFileSync(path.join(__dirname, "../docs/rotas.md"), "utf8").matchAll(

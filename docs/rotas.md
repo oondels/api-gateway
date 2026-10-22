@@ -20,13 +20,12 @@
 | `/api/att-ota` | `ATT_OTA_SERVICE` |
 | `/api/solicitacao-brinde` | `SOLICITACAO_BRINDE_SERVICE` |
 | `/api/almoxarifado-ti` | `ALMOXARIFADO_TI` |
-| `/api/dass-users` | `DASS_USERS` |
+| `/api/admin` | `ADMIN_SERVICE` |
 | `/api/synapse-ti` | `SYNAPSE_TI` |
 | `/api/pe-confirmado-teste` | `PE_CONFIRMADO_TESTE` |
 | `/api/amostras-tintas` | `AMOSTRAS_TINTAS` |
 | `/api/checklist-app` | `CHECKLIST_APP_SERVICE` |
 | `/api/coletores` | `COLETORES_SERVICE` |
-| `/api/config` | `CONFIG_SERVICE` |
 
 
 Somente `MAIN_SERVICE` é obrigatório. Destinos não usados podem ficar vazios; suas rotas retornam `503`, sem encaminhamento para outro serviço. Para caminhos sob `/api` sem prefixo cadastrado, o destino é `MAIN_SERVICE`.
