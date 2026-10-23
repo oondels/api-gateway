@@ -24,6 +24,7 @@ export const ROUTE_DEFINITIONS = [
   { prefix: "/api/checklist-app", service: "CHECKLIST_APP_SERVICE" },
   { prefix: "/api/coletores", service: "COLETORES_SERVICE" }, 
   { prefix: "/api/certificados-dass", service: "CERTIFICADOS_DASS" },
+  { prefix: "/api/formas-dass", service: "FORMAS_DASS" },
 ] as const;
 
 export type RoutedServiceEnvKey = (typeof ROUTE_DEFINITIONS)[number]["service"];
