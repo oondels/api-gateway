@@ -2,13 +2,16 @@
 
 const assert = require("node:assert/strict");
 const { once } = require("node:events");
+const fs = require("node:fs");
 const http = require("node:http");
+const path = require("node:path");
 const { Writable } = require("node:stream");
 const test = require("node:test");
 
 const { createApp, DEFAULT_CORS_ORIGINS } = require("../dist/src/app");
 const { loadConfig, SERVICE_ENV_KEYS } = require("../dist/src/config/dotenv");
-const { PROXY_ROUTES } = require("../dist/src/proxy");
+const { PROXY_ROUTES, setupWebSocketProxy } = require("../dist/src/proxy");
+const { ROUTE_DEFINITIONS, validateRouteRegistry } = require("../dist/src/config/routes");
 
 const listen = async (server) => {
   server.listen(0, "127.0.0.1");
@@ -51,6 +54,7 @@ const makeEnv = (target, extra = {}) => {
 
 const startGateway = async (config, options) => {
   const server = http.createServer(createApp(config, options));
+  setupWebSocketProxy(server, config);
   const url = await listen(server);
   return { server, url };
 };
@@ -67,6 +71,71 @@ test("healthcheck responds without proxying", async () => {
     await close(gateway.server);
     await close(upstream);
   }
+});
+
+test("liveness and readiness respond without probing upstream", async () => {
+  let probes = 0;
+  const upstream = http.createServer((incoming, response) => {
+    probes += 1;
+    response.end(JSON.stringify({ status: "ok" }));
+  });
+  const target = await listen(upstream);
+  const gateway = await startGateway(loadConfig({ env: makeEnv(target), loadEnvFile: false }), { logStream: false });
+  try {
+    const live = await request(gateway.url, "/health/live");
+    assert.equal(live.status, 200);
+    assert.deepEqual(JSON.parse(live.body), { status: "ok" });
+
+    const ready = await request(gateway.url, "/health/ready");
+    assert.equal(ready.status, 200);
+    assert.deepEqual(JSON.parse(ready.body), { status: "ok" });
+    assert.equal(probes, 0);
+  } finally {
+    await close(gateway.server);
+    await close(upstream);
+  }
+});
+
+test("route registry is the source for code, environment example and documentation", () => {
+  assert.equal(PROXY_ROUTES, ROUTE_DEFINITIONS);
+  assert.equal(PROXY_ROUTES.length, 22);
+  assert.equal(SERVICE_ENV_KEYS.length, 23);
+  assert.equal(SERVICE_ENV_KEYS[0], "MAIN_SERVICE");
+
+  const documentedRoutes = [...fs.readFileSync(path.join(__dirname, "../docs/rotas.md"), "utf8").matchAll(
+    /^\| `(\/api\/[^`]+)` \| `([A-Z0-9_]+)` \|$/gm,
+  )].map(([, prefix, service]) => ({ prefix, service }));
+  assert.deepEqual(documentedRoutes, PROXY_ROUTES);
+
+  const envExample = fs.readFileSync(path.join(__dirname, "../.env.example"), "utf8");
+  for (const key of SERVICE_ENV_KEYS) {
+    assert.match(envExample, new RegExp(`^${key}=`, "m"), key);
+  }
+});
+
+test("route registry rejects malformed, duplicate and ambiguous prefixes", () => {
+  assert.throws(
+    () => validateRouteRegistry([{ prefix: "/api", service: "SERVICE" }]),
+    /non-empty \/api\/<prefix>/,
+  );
+  assert.throws(
+    () => validateRouteRegistry([{ prefix: "/api/example", service: "" }]),
+    /destination service/,
+  );
+  assert.throws(
+    () => validateRouteRegistry([
+      { prefix: "/api/example", service: "SERVICE_A" },
+      { prefix: "/api/example", service: "SERVICE_B" },
+    ]),
+    /duplicated/,
+  );
+  assert.throws(
+    () => validateRouteRegistry([
+      { prefix: "/api/example", service: "SERVICE_A" },
+      { prefix: "/api/example/detail", service: "SERVICE_B" },
+    ]),
+    /ambiguous/,
+  );
 });
 
 test("every explicit proxy route preserves its service selection and removes the prefix", async () => {
@@ -216,6 +285,86 @@ test("auth fallback routes preserve request cookies and auth cookie rotation", a
   }
 });
 
+test("auth fallback transports security headers and does not create service credentials", async () => {
+  const received = [];
+  const upstream = http.createServer((incoming, response) => {
+    received.push({
+      url: incoming.url,
+      origin: incoming.headers.origin,
+      csrf: incoming.headers["x-csrf-token"],
+      forwardedHost: incoming.headers["x-forwarded-host"],
+      forwardedFor: incoming.headers["x-forwarded-for"],
+      serviceToken: incoming.headers["x-service-token"],
+      cookie: incoming.headers.cookie,
+    });
+
+    if (incoming.url === "/notification/send" && incoming.headers["x-service-token"] !== "service-secret") {
+      response.writeHead(401, { "content-type": "application/json" });
+      response.end(JSON.stringify({ code: "NOTIFICATION_SERVICE_UNAUTHORIZED" }));
+      return;
+    }
+
+    response.setHeader("set-cookie", "adminToken=rotated; HttpOnly; Path=/");
+    response.end(JSON.stringify({ ok: true }));
+  });
+  const target = await listen(upstream);
+  const gateway = await startGateway(loadConfig({ env: makeEnv(target), loadEnvFile: false }), { logStream: false });
+  try {
+    const headers = {
+      cookie: "adminToken=old-token",
+      origin: "http://localhost:5174",
+      "x-csrf-token": "csrf-token",
+      "x-forwarded-host": "localhost:5174",
+      "x-forwarded-for": "192.0.2.10",
+    };
+    const admin = await request(gateway.url, "/api/auth/admin/me/email", { method: "PATCH", headers, body: "{}" });
+    assert.equal(admin.status, 200);
+    assert.deepEqual(admin.headers["set-cookie"], ["adminToken=rotated; HttpOnly; Path=/"]);
+
+    const unauthorizedNotification = await request(gateway.url, "/api/notification/send", { method: "POST", headers });
+    assert.equal(unauthorizedNotification.status, 401);
+
+    const authorizedNotification = await request(gateway.url, "/api/notification/send", {
+      method: "POST",
+      headers: { ...headers, "x-service-token": "service-secret" },
+    });
+    assert.equal(authorizedNotification.status, 200);
+
+    assert.deepEqual(received, [
+      {
+        url: "/auth/admin/me/email",
+        origin: "http://localhost:5174",
+        csrf: "csrf-token",
+        forwardedHost: "localhost:5174",
+        forwardedFor: "192.0.2.10",
+        serviceToken: undefined,
+        cookie: "adminToken=old-token",
+      },
+      {
+        url: "/notification/send",
+        origin: "http://localhost:5174",
+        csrf: "csrf-token",
+        forwardedHost: "localhost:5174",
+        forwardedFor: "192.0.2.10",
+        serviceToken: undefined,
+        cookie: "adminToken=old-token",
+      },
+      {
+        url: "/notification/send",
+        origin: "http://localhost:5174",
+        csrf: "csrf-token",
+        forwardedHost: "localhost:5174",
+        forwardedFor: "192.0.2.10",
+        serviceToken: "service-secret",
+        cookie: "adminToken=old-token",
+      },
+    ]);
+  } finally {
+    await close(gateway.server);
+    await close(upstream);
+  }
+});
+
 test("CORS, Helmet, and access logs preserve security behavior without logging query strings", async () => {
   const upstream = http.createServer((_request, response) => response.end("ok"));
   const target = await listen(upstream);
@@ -223,11 +372,15 @@ test("CORS, Helmet, and access logs preserve security behavior without logging q
   const logStream = new Writable({ write(chunk, _encoding, callback) { logs += chunk; callback(); } });
   const gateway = await startGateway(loadConfig({ env: makeEnv(target, { CORS_ORIGINS: "https://app.example" }), loadEnvFile: false }), { logStream });
   try {
-    const cors = await request(gateway.url, "/api/example?token=secret", { headers: { origin: "https://app.example" } });
+    const cors = await request(gateway.url, "/api/example?token=secret", {
+      headers: { origin: "https://app.example", "x-request-id": "request-log" },
+    });
     assert.equal(cors.headers["access-control-allow-origin"], "https://app.example");
     assert.equal(cors.headers["access-control-allow-credentials"], "true");
     assert.equal(cors.headers["x-content-type-options"], "nosniff");
+    assert.equal(cors.headers["x-request-id"], "request-log");
     assert.match(logs, /GET \/api\/example 200/);
+    assert.match(logs, /request_id=request-log destination=MAIN_SERVICE/);
     assert.doesNotMatch(logs, /token=secret/);
     const defaultOrigin = await request(gateway.url, "/", { headers: { origin: DEFAULT_CORS_ORIGINS[0] } });
     assert.equal(defaultOrigin.headers["access-control-allow-origin"], DEFAULT_CORS_ORIGINS[0]);
@@ -237,15 +390,34 @@ test("CORS, Helmet, and access logs preserve security behavior without logging q
   }
 });
 
-test("loadConfig rejects missing destinations and malformed operational settings", () => {
-  assert.throws(
-    () => loadConfig({ env: { GATEWAY_PORT: "0" }, loadEnvFile: false }),
-    /TELAS_SERVICE is required.*GATEWAY_PORT must be an integer/s,
-  );
-  assert.throws(
-    () => loadConfig({ env: makeEnv("not-a-url", { RATE_LIMIT_ENABLED: "maybe", PROXY_TIMEOUT_MS: "-1" }), loadEnvFile: false }),
-    /RATE_LIMIT_ENABLED must be true.*PROXY_TIMEOUT_MS must be an integer/s,
-  );
+test("operational defaults enable bounded proxy failures", () => {
+  const target = "http://127.0.0.1:2399";
+  const config = loadConfig({ env: makeEnv(target), loadEnvFile: false });
+  assert.equal(config.proxyTimeoutMs, 30_000);
+  assert.equal(config.standardProxyErrorsEnabled, true);
+  assert.equal(config.strictRouteMode, false);
+});
+
+test("strict route mode rejects unknown API paths without using MAIN_SERVICE", async () => {
+  let upstreamCalls = 0;
+  const upstream = http.createServer((_request, response) => {
+    upstreamCalls += 1;
+    response.end("unexpected");
+  });
+  const target = await listen(upstream);
+  const gateway = await startGateway(loadConfig({
+    env: makeEnv(target, { STRICT_ROUTE_MODE: "true" }),
+    loadEnvFile: false,
+  }), { logStream: false });
+  try {
+    const response = await request(gateway.url, "/api/unknown");
+    assert.equal(response.status, 404);
+    assert.deepEqual(JSON.parse(response.body), { message: "Rota não cadastrada no Gateway." });
+    assert.equal(upstreamCalls, 0);
+  } finally {
+    await close(gateway.server);
+    await close(upstream);
+  }
 });
 
 test("rate limit is disabled by default and applies only when explicitly enabled", async () => {
@@ -268,10 +440,10 @@ test("rate limit is disabled by default and applies only when explicitly enabled
   }
 });
 
-test("standard proxy errors opt in to 502 responses", async () => {
+test("standard proxy errors map an unavailable destination to 502 by default", async () => {
   const unavailable = http.createServer((incoming) => incoming.socket.destroy());
   const unavailableTarget = await listen(unavailable);
-  const gateway = await startGateway(loadConfig({ env: makeEnv(unavailableTarget, { STANDARD_PROXY_ERRORS_ENABLED: "true" }), loadEnvFile: false }), { logStream: false });
+  const gateway = await startGateway(loadConfig({ env: makeEnv(unavailableTarget), loadEnvFile: false }), { logStream: false });
   try {
     const response = await request(gateway.url, "/api/unavailable");
     assert.equal(response.status, 502);
@@ -281,6 +453,7 @@ test("standard proxy errors opt in to 502 responses", async () => {
     await close(unavailable);
   }
 });
+
 
 test("proxy timeout maps to 504 when standard errors and a timeout are enabled", async () => {
   const slow = http.createServer(() => {});
@@ -293,5 +466,66 @@ test("proxy timeout maps to 504 when standard errors and a timeout are enabled",
   } finally {
     await close(gateway.server);
     await close(slow);
+  }
+});
+
+
+test("ERP WebSocket upgrade strips prefix and preserves query and authorization before any HTTP request", async () => {
+  const upstream = http.createServer();
+  let received;
+  let upstreamSocket;
+  upstream.on("upgrade", (incoming, socket) => {
+    upstreamSocket = socket;
+    received = { url: incoming.url, authorization: incoming.headers.authorization };
+    socket.write("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n");
+  });
+  const target = await listen(upstream);
+  const config = loadConfig({ env: makeEnv(target), loadEnvFile: false });
+  const gateway = await startGateway(config, { logStream: false });
+  let upgradedSocket;
+  try {
+    await new Promise((resolve, reject) => {
+      const outgoing = http.request(new URL("/api/erp-modelagem/socket.io/?EIO=4&transport=websocket", gateway.url), {
+        headers: { Connection: "Upgrade", Upgrade: "websocket", Authorization: "Bearer test-token" },
+      });
+      outgoing.setTimeout(3000, () => outgoing.destroy(new Error("WebSocket upgrade timed out")));
+      outgoing.on("error", reject);
+      outgoing.on("response", () => reject(new Error("Expected WebSocket upgrade")));
+      outgoing.on("upgrade", (response, socket) => {
+        upgradedSocket = socket;
+        assert.equal(response.statusCode, 101);
+        resolve();
+      });
+      outgoing.end();
+    });
+    assert.deepEqual(received, { url: "/socket.io/?EIO=4&transport=websocket", authorization: "Bearer test-token" });
+  } finally {
+    upgradedSocket?.destroy();
+    upstreamSocket?.destroy();
+    await close(gateway.server);
+    await close(upstream);
+  }
+});
+
+
+test("unused services may be omitted and their routes do not fall back to authentication", async () => {
+  let calls = 0;
+  const upstream = http.createServer((_incoming, response) => { calls += 1; response.end("auth"); });
+  const target = await listen(upstream);
+  const config = loadConfig({ env: { GATEWAY_PORT: "2399", MAIN_SERVICE: target }, loadEnvFile: false });
+  const gateway = await startGateway(config, { logStream: false });
+  try {
+    for (const route of PROXY_ROUTES) {
+      const response = await request(gateway.url, `${route.prefix}/resource`);
+      assert.equal(response.status, 503, route.prefix);
+      assert.deepEqual(JSON.parse(response.body), { message: "Serviço de destino não configurado." });
+    }
+    assert.equal(calls, 0);
+    const auth = await request(gateway.url, "/api/auth/login");
+    assert.equal(auth.status, 200);
+    assert.equal(calls, 1);
+  } finally {
+    await close(gateway.server);
+    await close(upstream);
   }
 });

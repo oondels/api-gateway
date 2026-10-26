@@ -15,6 +15,9 @@ services:
     environment:
       GATEWAY_PORT: "${GATEWAY_PORT:-2399}"
 
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
     restart: unless-stopped
 
     mem_limit: 200m
@@ -23,6 +26,13 @@ services:
       resources:
         limits:
           memory: 200M
+
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:' + (process.env.GATEWAY_PORT || 2399) + '/health/live', response => process.exit(response.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
 
     networks:
       - dass_private

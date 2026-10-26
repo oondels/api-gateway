@@ -12,7 +12,10 @@ Configuração obrigatória:
 
 - `GATEWAY_PORT`: porta interna do processo, entre 1 e 65535.
 - `MAIN_SERVICE`: URL do destino usado no fallback.
-- Todas as variáveis de destino da [tabela de rotas](rotas.md).
+
+Os demais destinos da [tabela de rotas](rotas.md) são opcionais. Se estiverem
+vazios, somente suas rotas retornam `503`; o gateway continua atendendo os
+serviços configurados.
 
 Configuração opcional:
 
@@ -22,8 +25,9 @@ Configuração opcional:
 | `RATE_LIMIT_ENABLED` | `false` | Ativa limite de requisições em `/api`. |
 | `RATE_LIMIT_WINDOW_MS` | `900000` | Define a janela do rate limit em milissegundos. |
 | `RATE_LIMIT_MAX` | `100` | Define requisições permitidas por cliente e janela. |
-| `PROXY_TIMEOUT_MS` | `0` | Define timeout do destino; `0` não configura timeout. |
-| `STANDARD_PROXY_ERRORS_ENABLED` | `false` | Retorna `502` ou `504` em JSON quando o destino falha. |
+| `PROXY_TIMEOUT_MS` | `30000` | Define timeout do destino em milissegundos; `0` desativa. |
+| `STANDARD_PROXY_ERRORS_ENABLED` | `true` | Retorna `502` ou `504` em JSON quando o destino falha. |
+| `STRICT_ROUTE_MODE` | `false` | Retorna `404` para caminhos `/api` sem prefixo explícito; mantenha `false` para preservar o fallback. |
 | `GATEWAY_HOST_PORT` | `2399` no Compose | Define a porta publicada pelo Docker. |
 
 Exemplo mínimo de desenvolvimento:
@@ -44,4 +48,5 @@ URLs de destinos devem ser alcançáveis a partir do processo do Gateway. Contai
 
 Para serviços no host, use um endereço alcançável. `host.docker.internal` só funciona se houver resolução/mapeamento no ambiente; o Compose deste repositório não declara `extra_hosts`.
 
-O carregador verifica presença dos destinos e os tipos/faixas das opções operacionais; não testa conectividade nem valida integralmente a sintaxe das URLs de destino. Consulte [operação](operacao.md) para diagnóstico.
+O carregador verifica presença dos destinos e os tipos/faixas das opções
+operacionais. Consulte [operação](operacao.md) para diagnóstico.

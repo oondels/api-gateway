@@ -4,6 +4,7 @@
 | --- | --- |
 | [Arquitetura](arquitetura.md) | Fluxo HTTP, módulos e responsabilidades |
 | [Rotas e funcionalidades](rotas.md) | Destinos, reescrita, políticas e exceções |
+| [Contratos com o auth](contratos-gateway-auth.md) | Compatibilidade de sessão, headers e rede |
 | [Configuração](configuracao.md) | Variáveis, precedência e rede |
 | [Operação e manutenção](operacao.md) | Desenvolvimento, Docker, testes e novas rotas |
 

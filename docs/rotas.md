@@ -4,6 +4,8 @@
 
 | Prefixo público | Variável de destino |
 | --- | --- |
+| `/api/erp-modelagem` | `ERP_MODELAGEM_SERVICE` |
+| `/api/index-informativo` | `INDEX_INFORMATIVO_SERVICE` |
 | `/api/telas` | `TELAS_SERVICE` |
 | `/api/sobracorte` | `SOBRACORTE_SERVICE` |
 | `/api/upload` | `UPLOAD_SERVICE` |
@@ -18,14 +20,15 @@
 | `/api/att-ota` | `ATT_OTA_SERVICE` |
 | `/api/solicitacao-brinde` | `SOLICITACAO_BRINDE_SERVICE` |
 | `/api/almoxarifado-ti` | `ALMOXARIFADO_TI` |
-| `/api/dass-users` | `DASS_USERS` |
+| `/api/admin` | `ADMIN_SERVICE` |
 | `/api/synapse-ti` | `SYNAPSE_TI` |
 | `/api/pe-confirmado-teste` | `PE_CONFIRMADO_TESTE` |
 | `/api/amostras-tintas` | `AMOSTRAS_TINTAS` |
 | `/api/checklist-app` | `CHECKLIST_APP_SERVICE` |
+| `/api/coletores` | `COLETORES_SERVICE` |
 
 
-Todas as variáveis de destino são obrigatórias. Para caminhos sob `/api` sem prefixo cadastrado, o destino é `MAIN_SERVICE`.
+Somente `MAIN_SERVICE` é obrigatório. Destinos não usados podem ficar vazios; suas rotas retornam `503`, sem encaminhamento para outro serviço. Para caminhos sob `/api` sem prefixo cadastrado, o destino é `MAIN_SERVICE`.
 
 ## Reescrita e compatibilidade
 
@@ -38,11 +41,19 @@ Todas as variáveis de destino são obrigatórias. Para caminhos sob `/api` sem 
 
 A API PortaRFID usa seu próprio prefixo `/api`; ele deve permanecer após a remoção do prefixo do Gateway.
 
+O ERP usa `/api/erp-modelagem` para APIs e arquivos (`/uploads`), e
+`/api/erp-modelagem/socket.io` para polling e upgrades WebSocket. O prefixo
+é removido antes do encaminhamento ao backend. Sua autenticação externa
+continua em `/api/auth/login`, encaminhada ao `MAIN_SERVICE`.
+
 ## Políticas HTTP
 
 CORS permite credenciais e combina a lista interna com as origens adicionais configuradas. Helmet acrescenta cabeçalhos de segurança. Logs incluem método, caminho sem query, status e tempo de resposta.
 
-Rate limit está desativado por padrão e, quando habilitado, aplica-se a `/api`. Timeout de proxy e respostas padronizadas são opcionais: com erros padronizados, falhas de conexão resultam em `502` e timeouts reconhecidos em `504`. Consulte os valores em [configuração](configuracao.md).
+Rate limit está desativado por padrão e, quando habilitado, aplica-se a `/api`.
+O proxy usa timeout padrão de 30 segundos e respostas padronizadas por padrão:
+falhas de conexão resultam em `502` e timeouts reconhecidos em `504`. Consulte
+os valores e as opções de circuit breaker em [configuração](configuracao.md).
 
 ## Exceções de transporte e acesso
 
